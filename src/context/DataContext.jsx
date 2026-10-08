@@ -57,6 +57,17 @@ export function DataProvider({ children }) {
   const [unlockedAchievements, setUnlockedAchievements] = useState(() => 
     loadScopedStorage('achievements', isDemoMode ? ['first_solve', 'streak_3'] : [])
   );
+  const [roadmapProgress, setRoadmapProgress] = useState(() => 
+    loadScopedStorage('roadmap_progress', isDemoMode ? { 'aws-devops-30': ['day-1', 'day-2', 'day-3'] } : {})
+  );
+  const [userProfile, setUserProfile] = useState(() => 
+    loadScopedStorage('user_profile', {
+      bio: 'Data Structures & Algorithms Enthusiast',
+      targetRole: 'Software Engineer',
+      leetcodeUsername: '',
+      githubUsername: '',
+    })
+  );
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [newlyUnlocked, setNewlyUnlocked] = useState(null);
@@ -81,6 +92,18 @@ export function DataProvider({ children }) {
 
       const savedAch = localStorage.getItem('grindtrack_demo_achievements');
       setUnlockedAchievements(savedAch ? JSON.parse(savedAch) : ['first_solve', 'streak_3']);
+
+      const savedRoadmap = localStorage.getItem('grindtrack_demo_roadmap_progress');
+      setRoadmapProgress(savedRoadmap ? JSON.parse(savedRoadmap) : { 'aws-devops-30': ['day-1', 'day-2', 'day-3'] });
+
+      const savedProfile = localStorage.getItem('grindtrack_demo_user_profile');
+      setUserProfile(savedProfile ? JSON.parse(savedProfile) : {
+        bio: 'Data Structures & Algorithms Enthusiast',
+        targetRole: 'Software Engineer',
+        leetcodeUsername: '',
+        githubUsername: '',
+      });
+
       setIsLoadingData(false);
       return;
     }
@@ -92,6 +115,8 @@ export function DataProvider({ children }) {
     const userLogsKey = getStorageKey(currentUid, false, 'daily_logs');
     const userXpKey = getStorageKey(currentUid, false, 'xp');
     const userAchKey = getStorageKey(currentUid, false, 'achievements');
+    const userRoadmapKey = getStorageKey(currentUid, false, 'roadmap_progress');
+    const userProfileKey = getStorageKey(currentUid, false, 'user_profile');
 
     const cachedProbs = localStorage.getItem(userProbsKey);
     setProblems(cachedProbs ? JSON.parse(cachedProbs) : []);
@@ -108,10 +133,21 @@ export function DataProvider({ children }) {
     const cachedAch = localStorage.getItem(userAchKey);
     setUnlockedAchievements(cachedAch ? JSON.parse(cachedAch) : []);
 
+    const cachedRoadmap = localStorage.getItem(userRoadmapKey);
+    setRoadmapProgress(cachedRoadmap ? JSON.parse(cachedRoadmap) : {});
+
+    const cachedProfile = localStorage.getItem(userProfileKey);
+    setUserProfile(cachedProfile ? JSON.parse(cachedProfile) : {
+      bio: 'Data Structures & Algorithms Enthusiast',
+      targetRole: 'Software Engineer',
+      leetcodeUsername: '',
+      githubUsername: '',
+    });
+
     // Setup Realtime Firestore Listeners for this specific user
     const userDocRef = doc(db, 'users', currentUid);
 
-    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile)
+    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile, Roadmap Progress)
     const userDocUnsub = onSnapshot(userDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -127,15 +163,30 @@ export function DataProvider({ children }) {
           setDailyLogs(data.dailyLogs);
           localStorage.setItem(userLogsKey, JSON.stringify(data.dailyLogs));
         }
+        if (data.roadmapProgress !== undefined) {
+          setRoadmapProgress(data.roadmapProgress);
+          localStorage.setItem(userRoadmapKey, JSON.stringify(data.roadmapProgress));
+        }
+        if (data.profile !== undefined) {
+          setUserProfile(data.profile);
+          localStorage.setItem(userProfileKey, JSON.stringify(data.profile));
+        }
       } else {
         // Initialize brand new user record in Firestore
         const initialUserData = {
           email: currentUser.email || '',
-          displayName: currentUser.displayName || '',
-          photoURL: currentUser.photoURL || '',
+          displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Member',
+          photoURL: currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
           xp: 0,
           unlockedAchievements: [],
           dailyLogs: {},
+          roadmapProgress: {},
+          profile: {
+            bio: 'Data Structures & Algorithms Enthusiast',
+            targetRole: 'Software Engineer',
+            leetcodeUsername: '',
+            githubUsername: '',
+          },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -189,8 +240,10 @@ export function DataProvider({ children }) {
       localStorage.setItem('grindtrack_demo_daily_logs', JSON.stringify(dailyLogs));
       localStorage.setItem('grindtrack_demo_xp', xp.toString());
       localStorage.setItem('grindtrack_demo_achievements', JSON.stringify(unlockedAchievements));
+      localStorage.setItem('grindtrack_demo_roadmap_progress', JSON.stringify(roadmapProgress));
+      localStorage.setItem('grindtrack_demo_user_profile', JSON.stringify(userProfile));
     }
-  }, [problems, tasks, dailyLogs, xp, unlockedAchievements, isDemoMode]);
+  }, [problems, tasks, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile, isDemoMode]);
 
   // Check achievements unlock
   const checkAchievements = async (currentProblems, currentTasks, currentStreak) => {
@@ -546,6 +599,54 @@ export function DataProvider({ children }) {
     }
   };
 
+  // Save Roadmap module progress scoped strictly to the current user
+  const saveRoadmapProgress = async (roadmapId, completedKeys) => {
+    const updated = {
+      ...roadmapProgress,
+      [roadmapId]: completedKeys,
+    };
+    setRoadmapProgress(updated);
+
+    const roadmapKey = getStorageKey(currentUid, isDemoMode, 'roadmap_progress');
+    localStorage.setItem(roadmapKey, JSON.stringify(updated));
+
+    if (currentUser && !isDemoMode) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          roadmapProgress: updated,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error saving roadmap progress to Firestore:', err);
+      }
+    }
+  };
+
+  // Save profile information scoped to the current user
+  const saveUserProfile = async (profileUpdates) => {
+    const updated = {
+      ...userProfile,
+      ...profileUpdates,
+    };
+    setUserProfile(updated);
+
+    const profileKey = getStorageKey(currentUid, isDemoMode, 'user_profile');
+    localStorage.setItem(profileKey, JSON.stringify(updated));
+
+    if (currentUser && !isDemoMode) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          profile: updated,
+          ...(profileUpdates.displayName ? { displayName: profileUpdates.displayName } : {}),
+          ...(profileUpdates.photoURL ? { photoURL: profileUpdates.photoURL } : {}),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error saving user profile to Firestore:', err);
+      }
+    }
+  };
+
   // Calculate streak from daily logs
   const calculateStreak = () => {
     let streak = 0;
@@ -577,6 +678,8 @@ export function DataProvider({ children }) {
     xp,
     levelInfo,
     unlockedAchievements,
+    roadmapProgress,
+    userProfile,
     newlyUnlocked,
     setNewlyUnlocked,
     activeXpReward,
@@ -591,6 +694,8 @@ export function DataProvider({ children }) {
     toggleTask,
     deleteTask,
     calculateStreak,
+    saveRoadmapProgress,
+    saveUserProfile,
     loadStarterData,
     clearUserData,
   };

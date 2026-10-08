@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -135,12 +136,17 @@ export default function Navbar() {
         {/* User Profile / Logout */}
         {currentUser && (
           <div className="flex items-center gap-3 pl-3 border-l border-slate-800">
-            <motion.img
-              whileHover={prefersReduced ? undefined : { scale: 1.08 }}
-              src={currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
-              alt="Avatar"
-              className="w-8 h-8 rounded-xl object-cover border border-cyan-500/40"
-            />
+            <Link to="/profile" className="flex items-center gap-2 group cursor-pointer" title="View Profile & Resume">
+              <motion.img
+                whileHover={prefersReduced ? undefined : { scale: 1.08 }}
+                src={currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
+                alt="Avatar"
+                className="w-8 h-8 rounded-xl object-cover border border-cyan-500/40 group-hover:border-cyan-400"
+              />
+              <span className="hidden md:inline text-xs font-bold text-slate-300 group-hover:text-cyan-300 max-w-[120px] truncate">
+                {currentUser.displayName || currentUser.email?.split('@')[0] || 'Member'}
+              </span>
+            </Link>
             <motion.button
               onClick={logout}
               whileHover={prefersReduced ? undefined : { scale: 1.1 }}

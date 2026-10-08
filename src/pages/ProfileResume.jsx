@@ -9,28 +9,28 @@ import TopicProgressChart from '../components/dsa/TopicProgressChart';
 import DifficultyChart from '../components/dsa/DifficultyChart';
 import MotionButton from '../components/motion/MotionButton';
 import AnimatedCounter from '../components/motion/AnimatedCounter';
-import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles } from 'lucide-react';
+import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck } from 'lucide-react';
+import Modal from '../components/shared/Modal';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
 
 export default function ProfileResume() {
   const { currentUser } = useAuth();
-  const { problems, tasks, xp, levelInfo, calculateStreak, unlockedAchievements } = useData();
+  const { problems, tasks, xp, levelInfo, calculateStreak, unlockedAchievements, roadmapProgress, userProfile, saveUserProfile } = useData();
 
   const [copied, setCopied] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editLeetCode, setEditLeetCode] = useState('');
+  const [editGithub, setEditGithub] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const prefersReduced = isReducedMotionPreferred();
   const navigate = useNavigate();
 
   const awsRoadmap = CURATED_ROADMAPS.find((r) => r.id === 'aws-devops-30');
-  const storageKey = `grindtrack_roadmap_completed_${currentUser?.uid || 'demo_user'}_aws-devops-30`;
-
-  const [awsCompletedDays, setAwsCompletedDays] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const awsCompletedDays = roadmapProgress?.['aws-devops-30'] || [];
 
   const totalAwsDays = awsRoadmap?.problems?.length || 30;
   const awsProgressPercent = Math.round((awsCompletedDays.length / totalAwsDays) * 100);
@@ -39,6 +39,29 @@ export default function ProfileResume() {
   const solvedCount = problems.filter((p) => p.status === 'solved').length;
   const hardSolvedCount = problems.filter((p) => p.status === 'solved' && p.difficulty === 'Hard').length;
   const tasksDoneCount = tasks.filter(t => t.status === 'done').length;
+
+  const handleOpenEdit = () => {
+    setEditName(userProfile?.displayName || currentUser?.displayName || '');
+    setEditRole(userProfile?.targetRole || 'Software Engineer');
+    setEditBio(userProfile?.bio || 'DSA & System Design Enthusiast');
+    setEditLeetCode(userProfile?.leetcodeUsername || '');
+    setEditGithub(userProfile?.githubUsername || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    await saveUserProfile({
+      displayName: editName,
+      targetRole: editRole,
+      bio: editBio,
+      leetcodeUsername: editLeetCode,
+      githubUsername: editGithub,
+    });
+    setSavingProfile(false);
+    setIsEditModalOpen(false);
+  };
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -122,16 +145,34 @@ export default function ProfileResume() {
               className="w-16 h-16 rounded-2xl object-cover border-2 border-cyan-500 shadow-xl shadow-cyan-500/20"
             />
             <div>
-              <h2 className="text-xl font-extrabold text-slate-100 flex items-center gap-2">
-                {currentUser?.displayName || 'Alex Rivers'}
-                <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              </h2>
-              <p className="text-xs text-slate-400 font-medium">{currentUser?.email}</p>
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-extrabold text-slate-100 flex items-center gap-2">
+                  {userProfile?.displayName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Member'}
+                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                </h2>
+                <button
+                  onClick={handleOpenEdit}
+                  className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-cyan-300 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                  title="Edit Profile"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span className="text-[10px] hidden sm:inline">Edit Profile</span>
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 font-medium">{currentUser?.email || 'Authenticated User'}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-2">
                 <span className={`px-3 py-0.5 rounded-full text-xs font-bold text-white bg-gradient-to-r ${levelInfo.badgeColor}`}>
                   Level {levelInfo.level} — {levelInfo.title}
                 </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  {userProfile?.targetRole || 'Software Engineer'}
+                </span>
               </div>
+              {userProfile?.bio && (
+                <p className="text-[11px] text-slate-400 italic mt-1.5 line-clamp-2 max-w-md">
+                  "{userProfile.bio}"
+                </p>
+              )}
             </div>
           </div>
 
@@ -299,6 +340,91 @@ export default function ProfileResume() {
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Edit Profile & Skills Record"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleSaveProfile} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Full Name / Display Name</label>
+            <input
+              type="text"
+              required
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="e.g. Alex Rivers"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Target Engineering Role</label>
+            <input
+              type="text"
+              required
+              value={editRole}
+              onChange={(e) => setEditRole(e.target.value)}
+              placeholder="e.g. Cloud & DevOps Engineer"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Bio / Headline</label>
+            <textarea
+              rows="3"
+              value={editBio}
+              onChange={(e) => setEditBio(e.target.value)}
+              placeholder="Brief summary of your learning journey and technical goals..."
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">LeetCode Username</label>
+              <input
+                type="text"
+                value={editLeetCode}
+                onChange={(e) => setEditLeetCode(e.target.value)}
+                placeholder="e.g. neal_wu"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1">GitHub Username</label>
+              <input
+                type="text"
+                value={editGithub}
+                onChange={(e) => setEditGithub(e.target.value)}
+                placeholder="e.g. octocat"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingProfile}
+              className="px-4 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
+            >
+              {savingProfile ? 'Saving...' : 'Save to Database'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

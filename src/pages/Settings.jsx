@@ -133,13 +133,23 @@ export default function Settings() {
           </div>
 
           {!isDemoMode && currentUser && (
-            <div className="pt-2 border-t border-slate-800/80">
-              <span className="text-slate-400 block">Dedicated Database Path:</span>
-              <code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 inline-block mt-0.5">
-                /users/{currentUser.uid}
-              </code>
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
+              <div>
+                <span className="text-slate-400 block">User Name & ID:</span>
+                <span className="font-bold text-slate-200">
+                  {currentUser.displayName || 'Member'} &bull; <code className="text-cyan-400 font-mono text-[11px]">{currentUser.uid}</code>
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">Dedicated Database Paths:</span>
+                <div className="space-y-1 mt-1 font-mono text-[11px]">
+                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}</code> <span className="text-slate-500 font-sans">(Profile, XP, Streak, Badges, Roadmap)</span></div>
+                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}/problems</code> <span className="text-slate-500 font-sans">(DSA problems & spaced repetitions)</span></div>
+                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}/tasks</code> <span className="text-slate-500 font-sans">(Daily accountability tasks)</span></div>
+                </div>
+              </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                Your problems, tasks, streak, and XP are stored separately under this path. Other users cannot read or modify your data.
+                Your problems, tasks, streak, roadmap, and XP are stored separately inside your private document. Other users cannot read or modify your data.
               </p>
             </div>
           )}

@@ -24,7 +24,7 @@ import {
 import { isReducedMotionPreferred, SPRING_SMOOTH, SPRING_TACTILE } from '../../animations/motionConfig';
 
 export default function RoadmapTracker() {
-  const { problems, addProblem, addTask, triggerXpReward } = useData();
+  const { problems, addProblem, addTask, addXp, roadmapProgress, saveRoadmapProgress } = useData();
   const { currentUser, isDemoMode } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const prefersReduced = isReducedMotionPreferred();
@@ -34,27 +34,7 @@ export default function RoadmapTracker() {
   const [selectedWeek, setSelectedWeek] = useState('all'); // 'all' | 1 | 2 | 3 | 4
   const [searchFilter, setSearchFilter] = useState('');
 
-  // Persistent completed items for roadmaps (scoped to user)
-  const currentUid = currentUser?.uid || (isDemoMode ? 'demo_user' : 'guest');
-  const storageKey = `grindtrack_roadmap_completed_${currentUid}_${selectedRoadmapId}`;
-
-  const [completedItems, setCompletedItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      setCompletedItems(saved ? JSON.parse(saved) : []);
-    } catch {
-      setCompletedItems([]);
-    }
-  }, [storageKey]);
+  const completedItems = roadmapProgress?.[selectedRoadmapId] || [];
 
   const activeRoadmap = CURATED_ROADMAPS.find((r) => r.id === selectedRoadmapId) || CURATED_ROADMAPS[0];
 
@@ -84,13 +64,9 @@ export default function RoadmapTracker() {
       next = completedItems.filter((k) => k !== key);
     } else {
       next = [...completedItems, key];
-      // Award XP for completing a roadmap milestone
-      if (triggerXpReward) {
-        triggerXpReward(50, `Completed ${item.title}!`);
-      }
+      addXp(50, `Roadmap: ${item.title}`);
     }
-    setCompletedItems(next);
-    localStorage.setItem(storageKey, JSON.stringify(next));
+    saveRoadmapProgress(selectedRoadmapId, next);
   };
 
   // Compute total roadmap progress
