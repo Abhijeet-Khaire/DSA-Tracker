@@ -17,7 +17,7 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
       return;
     }
 
-    // Trigger true mechanical 3D split-flap transition
+    // Trigger true mechanical 2-phase split-flap transition
     setPreviousDigit(currentDigit);
     setCurrentDigit(digit);
     setIsFlipping(true);
@@ -26,7 +26,7 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
     flipTimerRef.current = setTimeout(() => {
       setIsFlipping(false);
       setPreviousDigit(digit);
-    }, 520);
+    }, 480);
 
     return () => {
       if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
@@ -35,39 +35,47 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
 
   return (
     <div className="flip-digit-module">
-      <div className="flip-digit-card">
-        {/* 1. Static Upper Half (Shows the new digit behind the falling flap) */}
-        <div className="flip-half flip-half-top">
-          <span className="flip-number-text">{currentDigit}</span>
+      {/* 1. Static Top Plate: Shows current (new) digit's upper half */}
+      <div className="flip-plate flip-plate-top">
+        <div className="flip-plate-bg" />
+        <div className="flip-glyph-wrapper">
+          <span className="flip-glyph">{currentDigit}</span>
         </div>
+      </div>
 
-        {/* 2. Static Lower Half (Shows previous digit until covered by flap landing) */}
-        <div className="flip-half flip-half-bottom">
-          <span className="flip-number-text">
+      {/* 2. Static Bottom Plate: Shows previous digit until animation completes */}
+      <div className="flip-plate flip-plate-bottom">
+        <div className="flip-plate-bg" />
+        <div className="flip-glyph-wrapper">
+          <span className="flip-glyph">
             {isFlipping ? previousDigit : currentDigit}
           </span>
         </div>
+      </div>
 
-        {/* 3. The 3D Rotating Leaf (Active during split-flap transition) */}
-        {isFlipping && !prefersReduced && (
-          <div className="flip-flipper-leaf flip-animate">
-            {/* Front of leaf: Upper half of old digit falling downward */}
-            <div className="flip-leaf-front">
-              <span className="flip-number-text">{previousDigit}</span>
-              <div className="flip-shadow-overlay" />
-            </div>
-
-            {/* Back of leaf: Lower half of new digit landing on bottom plate */}
-            <div className="flip-leaf-back">
-              <span className="flip-number-text">{currentDigit}</span>
-              <div className="flip-shadow-overlay" />
+      {/* 3. Dynamic Animated Flaps (Active during 3D flip transition) */}
+      {isFlipping && !prefersReduced && (
+        <>
+          {/* Top Flap: Shows previous digit upper half, swings down 0deg -> -90deg */}
+          <div className="flip-plate flip-plate-top flip-flap-top-animated">
+            <div className="flip-plate-bg" />
+            <div className="flip-glyph-wrapper">
+              <span className="flip-glyph">{previousDigit}</span>
             </div>
           </div>
-        )}
 
-        {/* 4. Physical Center Seam & Mechanical Hinge Gap */}
-        <div className="flip-center-split" />
-      </div>
+          {/* Bottom Flap: Shows new digit lower half, swings down 90deg -> 0deg */}
+          <div className="flip-plate flip-plate-bottom flip-flap-bottom-animated">
+            <div className="flip-plate-bg" />
+            <div className="flip-glyph-wrapper">
+              <span className="flip-glyph">{currentDigit}</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 4. Physical Center Seam Gap */}
+      <div className="flip-center-seam" />
     </div>
   );
 }
