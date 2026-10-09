@@ -290,29 +290,31 @@ export function DataProvider({ children }) {
 
   // Helper for adding XP with rapid-reward grouping and Firestore persistence
   const addXp = async (amount, reason = '') => {
-    const nextXp = xp + amount;
+    const nextXp = Math.max(0, xp + amount);
     setXp(nextXp);
 
-    if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
+    if (amount > 0) {
+      if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
 
-    setActiveXpReward((prev) => {
-      if (prev) {
+      setActiveXpReward((prev) => {
+        if (prev) {
+          return {
+            id: Date.now(),
+            amount: prev.amount + amount,
+            reason: reason || prev.reason || 'Bonus Rewards',
+          };
+        }
         return {
           id: Date.now(),
-          amount: prev.amount + amount,
-          reason: reason || prev.reason || 'Bonus Rewards',
+          amount,
+          reason: reason || 'Activity Milestone',
         };
-      }
-      return {
-        id: Date.now(),
-        amount,
-        reason: reason || 'Activity Milestone',
-      };
-    });
+      });
 
-    xpTimerRef.current = setTimeout(() => {
-      setActiveXpReward(null);
-    }, 2400);
+      xpTimerRef.current = setTimeout(() => {
+        setActiveXpReward(null);
+      }, 2400);
+    }
 
     if (currentUser && !isDemoMode) {
       try {
@@ -326,22 +328,31 @@ export function DataProvider({ children }) {
     }
   };
 
-  // Log today's activity with Firestore persistence
-  const recordDailyActivity = async (type, amount = 1, xpEarned = 0) => {
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const current = dailyLogs[today] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: true };
+  // Log today's activity with Firestore persistence (supports both increment and decrement)
+  const recordDailyActivity = async (type, amount = 1, xpEarned = 0, specificDate = null) => {
+    const targetDate = specificDate || format(new Date(), 'yyyy-MM-dd');
+    const current = dailyLogs[targetDate] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
+    
+    const nextProblemsSolved = Math.max(0, (current.problemsSolved || 0) + (type === 'problem' ? amount : 0));
+    const nextTasksCompleted = Math.max(0, (current.tasksCompleted || 0) + (type === 'task' ? amount : 0));
+    const nextXpEarned = Math.max(0, (current.xpEarned || 0) + xpEarned);
+    const isActiveDay = nextProblemsSolved > 0 || nextTasksCompleted > 0;
+
     const nextLogs = {
       ...dailyLogs,
-      [today]: {
+      [targetDate]: {
         ...current,
-        problemsSolved: type === 'problem' ? current.problemsSolved + amount : current.problemsSolved,
-        tasksCompleted: type === 'task' ? current.tasksCompleted + amount : current.tasksCompleted,
-        xpEarned: current.xpEarned + xpEarned,
-        activeDay: true,
+        problemsSolved: nextProblemsSolved,
+        tasksCompleted: nextTasksCompleted,
+        xpEarned: nextXpEarned,
+        activeDay: isActiveDay,
       }
     };
 
     setDailyLogs(nextLogs);
+
+    const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
+    localStorage.setItem(userLogsKey, JSON.stringify(nextLogs));
 
     if (currentUser && !isDemoMode) {
       try {
@@ -390,9 +401,10 @@ export function DataProvider({ children }) {
   const updateProblem = async (id, updates) => {
     let xpReward = 0;
     let updatedProblem = null;
+    let nextProblems = [];
 
-    setProblems((prev) =>
-      prev.map((p) => {
+    setProblems((prev) => {
+      nextProblems = prev.map((p) => {
         if (p.id === id) {
           const wasSolved = p.status === 'solved';
           const isNowSolved = updates.status === 'solved';
@@ -407,29 +419,38 @@ export function DataProvider({ children }) {
             revisionDate = getNextRevisionDate(new Date(), 0);
             xpReward = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
                        p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+          } else if (wasSolved && !isNowSolved) {
+            const deduct = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                           p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+            xpReward = -deduct;
+            solvedAt = null;
+            revisionDate = null;
+            revisionCount = 0;
           }
 
           updatedProblem = { ...p, ...updates, solvedAt, revisionDate, revisionCount, updatedAt: new Date().toISOString() };
           return updatedProblem;
         }
         return p;
-      })
-    );
+      });
+      return nextProblems;
+    });
+
+    // Update local storage
+    const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+    localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
     if (xpReward > 0) {
       addXp(xpReward, 'Problem Status Solved');
       recordDailyActivity('problem', 1, xpReward);
+    } else if (xpReward < 0) {
+      addXp(xpReward, 'Problem Status Reverted');
+      recordDailyActivity('problem', -1, xpReward);
     }
 
     if (currentUser && !isDemoMode && updatedProblem) {
       try {
-        await updateDoc(doc(db, 'users', currentUser.uid, 'problems', id), {
-          ...updates,
-          solvedAt: updatedProblem.solvedAt,
-          revisionDate: updatedProblem.revisionDate,
-          revisionCount: updatedProblem.revisionCount,
-          updatedAt: new Date().toISOString(),
-        });
+        await setDoc(doc(db, 'users', currentUser.uid, 'problems', id), updatedProblem, { merge: true });
       } catch (err) {
         console.error('Error updating problem in Firestore:', err);
       }
@@ -491,7 +512,11 @@ export function DataProvider({ children }) {
       createdAt: format(new Date(), 'yyyy-MM-dd'),
     };
 
-    setTasks((prev) => [newTask, ...prev]);
+    const nextTasks = [newTask, ...tasks];
+    setTasks(nextTasks);
+
+    const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
+    localStorage.setItem(userTasksKey, JSON.stringify(nextTasks));
 
     if (currentUser && !isDemoMode) {
       try {
@@ -503,14 +528,15 @@ export function DataProvider({ children }) {
   };
 
   const toggleTask = async (id) => {
-    let xpEarned = 0;
     let updatedTask = null;
+    let wasDone = false;
+    let nextTasks = [];
 
-    setTasks((prev) =>
-      prev.map((t) => {
+    setTasks((prev) => {
+      nextTasks = prev.map((t) => {
         if (t.id === id) {
-          const nextStatus = t.status === 'done' ? 'pending' : 'done';
-          if (nextStatus === 'done') xpEarned = XP_REWARDS.TASK_COMPLETE;
+          wasDone = t.status === 'done';
+          const nextStatus = wasDone ? 'pending' : 'done';
           updatedTask = {
             ...t,
             status: nextStatus,
@@ -519,28 +545,56 @@ export function DataProvider({ children }) {
           return updatedTask;
         }
         return t;
-      })
-    );
+      });
+      return nextTasks;
+    });
 
-    if (xpEarned > 0) {
-      addXp(xpEarned, 'Daily Task Completed');
-      recordDailyActivity('task', 1, xpEarned);
+    if (!updatedTask) return;
+
+    // Immediately cache updated tasks to localStorage
+    const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
+    localStorage.setItem(userTasksKey, JSON.stringify(nextTasks));
+
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const completionDate = (wasDone && updatedTask.completedAt) ? updatedTask.completedAt : todayStr;
+
+    if (!wasDone) {
+      // Task was marked COMPLETED -> add XP and record daily activity
+      addXp(XP_REWARDS.TASK_COMPLETE, 'Daily Task Completed');
+      recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr);
+    } else {
+      // Task was UNCHECKED -> subtract XP and decrement daily activity
+      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Unchecked');
+      recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate);
     }
 
-    if (currentUser && !isDemoMode && updatedTask) {
+    if (currentUser && !isDemoMode) {
       try {
-        await updateDoc(doc(db, 'users', currentUser.uid, 'tasks', id), {
-          status: updatedTask.status,
-          completedAt: updatedTask.completedAt,
-        });
+        await setDoc(doc(db, 'users', currentUser.uid, 'tasks', id), updatedTask, { merge: true });
       } catch (err) {
         console.error('Error toggling task in Firestore:', err);
       }
     }
+
+    checkAchievements(problems, nextTasks, calculateStreak());
   };
 
   const deleteTask = async (id) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    const taskToDelete = tasks.find((t) => t.id === id);
+    const nextTasks = tasks.filter((t) => t.id !== id);
+    setTasks(nextTasks);
+
+    const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
+    localStorage.setItem(userTasksKey, JSON.stringify(nextTasks));
+
+    // If deleting a completed task, revert its daily activity and XP
+    if (taskToDelete && taskToDelete.status === 'done') {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const targetDate = taskToDelete.completedAt || todayStr;
+      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Deleted');
+      recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, targetDate);
+    }
+
     if (currentUser && !isDemoMode) {
       try {
         await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', id));
