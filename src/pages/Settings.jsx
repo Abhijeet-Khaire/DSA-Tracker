@@ -1,36 +1,175 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import MotionButton from '../components/motion/MotionButton';
-import { Settings as SettingsIcon, Database, ShieldCheck, Download, RefreshCw, Zap, Sliders, Sparkles, Trash2, Globe } from 'lucide-react';
-import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
-import WebLoader from '../components/shared/WebLoader';
-import WebLoadingScreen from '../components/shared/WebLoadingScreen';
+import { 
+  Settings as SettingsIcon, 
+  Target, 
+  Code, 
+  BrainCircuit, 
+  Award, 
+  User, 
+  Mail, 
+  KeyRound, 
+  Download, 
+  Upload, 
+  RefreshCw, 
+  Trash2, 
+  Sliders, 
+  Sparkles, 
+  CheckCircle2, 
+  AlertTriangle, 
+  ExternalLink, 
+  Clock, 
+  Flame, 
+  BookOpen, 
+  Layers, 
+  HelpCircle,
+  Volume2,
+  VolumeX,
+  ShieldCheck,
+  Check
+} from 'lucide-react';
+import { isReducedMotionPreferred, SPRING_SMOOTH, SPRING_TACTILE } from '../animations/motionConfig';
+import { REVISION_INTERVALS_DAYS } from '../lib/revisionEngine';
+import { XP_REWARDS, RANKS } from '../lib/xpEngine';
+import { Link } from 'react-router-dom';
+
+const PROGRAMMING_LANGUAGES = [
+  'C++',
+  'Java',
+  'Python',
+  'JavaScript',
+  'TypeScript',
+  'Go',
+  'Rust',
+  'C#',
+];
+
+const TARGET_ROLES = [
+  'Software Development Engineer (SDE 1)',
+  'Senior Software Engineer (SDE 2+)',
+  'Frontend Engineer',
+  'Backend Engineer',
+  'Full Stack Developer',
+  'DevOps / Cloud Platform Engineer',
+  'Data Engineer / AI Engineer',
+];
+
+const TARGET_COMPANIES = [
+  'MAANG / Big Tech',
+  'High-Growth Unicorn Startups',
+  'Fintech / Quant Trading',
+  'Product Companies',
+  'Enterprise Software',
+];
 
 export default function Settings() {
-  const { currentUser } = useAuth();
-  const { problems, tasks, xp, loadStarterData, clearUserData } = useData();
+  const { currentUser, sendPasswordReset } = useAuth();
+  const { 
+    problems, 
+    tasks, 
+    xp, 
+    levelInfo, 
+    userProfile, 
+    saveUserProfile, 
+    loadStarterData, 
+    clearUserData, 
+    importUserData,
+    calculateStreak 
+  } = useData();
 
+  const fileInputRef = useRef(null);
+
+  // Active Category Tab
+  const [activeTab, setActiveTab] = useState('study'); // 'study' | 'account' | 'guides' | 'data' | 'appearance'
+
+  // Preferences State
   const [reducedMotion, setReducedMotion] = useState(() => isReducedMotionPreferred());
-  const [actionMessage, setActionMessage] = useState('');
-  const [isFullscreenLoaderActive, setIsFullscreenLoaderActive] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('grindtrack_sound_fx') !== 'false');
+  
+  // Study Goals State
+  const [dailyProblemGoal, setDailyProblemGoal] = useState(() => userProfile?.dailyProblemGoal || 2);
+  const [dailyTaskGoal, setDailyTaskGoal] = useState(() => userProfile?.dailyTaskGoal || 3);
+  const [preferredLanguage, setPreferredLanguage] = useState(() => userProfile?.preferredLanguage || 'C++');
+  const [targetRole, setTargetRole] = useState(() => userProfile?.targetRole || 'Software Development Engineer (SDE 1)');
+  const [targetCompany, setTargetCompany] = useState(() => userProfile?.targetCompany || 'MAANG / Big Tech');
+  const [targetInterviewDate, setTargetInterviewDate] = useState(() => userProfile?.targetInterviewDate || '');
+
+  // UI Feedback
+  const [actionMessage, setActionMessage] = useState({ text: '', type: 'success' });
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+
+  const showNotification = (text, type = 'success') => {
+    setActionMessage({ text, type });
+    setTimeout(() => setActionMessage({ text: '', type: 'success' }), 4500);
+  };
 
   const handleToggleReducedMotion = () => {
     const nextVal = !reducedMotion;
     setReducedMotion(nextVal);
     localStorage.setItem('grindtrack_reduced_motion', String(nextVal));
     window.dispatchEvent(new Event('storage'));
+    showNotification(`Reduced Motion ${nextVal ? 'enabled' : 'disabled'}`);
   };
 
+  const handleToggleSound = () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    localStorage.setItem('grindtrack_sound_fx', String(nextVal));
+    showNotification(`Sound effects ${nextVal ? 'enabled' : 'muted'}`);
+  };
+
+  // Save Study & Goal Preferences
+  const handleSaveStudyGoals = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingPreferences(true);
+    try {
+      await saveUserProfile({
+        dailyProblemGoal: Number(dailyProblemGoal),
+        dailyTaskGoal: Number(dailyTaskGoal),
+        preferredLanguage,
+        targetRole,
+        targetCompany,
+        targetInterviewDate,
+      });
+      showNotification('Study preferences and daily targets saved!');
+    } catch (err) {
+      showNotification('Failed to save study preferences.', 'error');
+    } finally {
+      setIsSavingPreferences(false);
+    }
+  };
+
+  // Password Reset Email
+  const handlePasswordReset = async () => {
+    if (!currentUser?.email) {
+      showNotification('No email registered for current session.', 'error');
+      return;
+    }
+    setIsSendingReset(true);
+    try {
+      await sendPasswordReset(currentUser.email);
+      showNotification(`Password reset link sent to ${currentUser.email}! Check your inbox.`, 'success');
+    } catch (err) {
+      showNotification(err.message || 'Failed to send password reset email.', 'error');
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  // Export JSON Backup
   const handleExport = () => {
     const data = {
+      exportVersion: '2.0',
       exportDate: new Date().toISOString(),
-      user: currentUser ? currentUser.email : 'demo',
-      uid: currentUser?.uid || 'demo_user_123',
+      user: currentUser ? currentUser.email : 'local_user',
       xp,
       problems,
       tasks,
+      userProfile,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -39,196 +178,730 @@ export default function Settings() {
     a.download = `grindtrack-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    showNotification('Backup JSON exported successfully!');
+  };
+
+  // Import JSON Backup
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importedData = JSON.parse(text);
+
+      if (!importedData.problems && !importedData.tasks && typeof importedData.xp !== 'number') {
+        showNotification('Invalid backup file. Missing GrindTrack data format.', 'error');
+        return;
+      }
+
+      if (window.confirm(`Restore backup from ${file.name}? This will update your solved problems and tasks.`)) {
+        await importUserData(importedData);
+        showNotification(`Successfully restored ${importedData.problems?.length || 0} problems & ${importedData.tasks?.length || 0} tasks!`);
+      }
+    } catch (err) {
+      showNotification('Failed to parse JSON backup file.', 'error');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleLoadStarterData = async () => {
-    if (window.confirm('Load curated starter DSA problems and daily tasks into your account?')) {
+    if (window.confirm('Load curated starter pack with essential DSA problems and daily productivity habits?')) {
       await loadStarterData();
-      setActionMessage('Curated starter pack loaded successfully!');
-      setTimeout(() => setActionMessage(''), 3500);
+      showNotification('Curated starter pack loaded successfully!');
     }
   };
 
   const handleClearData = async () => {
-    if (window.confirm('Are you sure you want to delete all problems, tasks, and reset XP for this account? This cannot be undone.')) {
+    if (window.confirm('WARNING: Are you sure you want to permanently reset all problems, tasks, and XP for this account? This action cannot be undone.')) {
       await clearUserData();
-      setActionMessage('Your account data has been reset.');
-      setTimeout(() => setActionMessage(''), 3500);
+      showNotification('Your account data has been reset.', 'error');
     }
   };
 
+  const streak = calculateStreak();
+
   return (
-    <div className="space-y-8 pb-12 max-w-4xl">
+    <div className="space-y-8 pb-16 max-w-5xl">
+      {/* Page Header */}
       <div>
         <h1 className="text-2xl font-extrabold text-slate-100 flex items-center gap-3">
           <motion.div 
             whileHover={reducedMotion ? undefined : { rotate: 90 }}
             transition={SPRING_SMOOTH}
-            className="p-2 rounded-xl bg-slate-800 text-slate-300 cursor-default"
+            className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 cursor-default"
           >
             <SettingsIcon className="w-6 h-6" />
           </motion.div>
-          Settings & Data Management
+          Settings & Preferences
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Manage your account profile, motion accessibility preferences, and database synchronization.
+          Customize your daily grind targets, spaced repetition workflow, account preferences, and data backups.
         </p>
       </div>
 
-      {actionMessage && (
-        <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-cyan-400" /> {actionMessage}
-        </div>
-      )}
-
-      {/* Interface & Motion Accessibility Settings */}
-      <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
-          <Sliders className="w-5 h-5 text-cyan-400" /> Interface & Motion Accessibility
-        </div>
-        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-          <div>
-            <span className="font-bold text-slate-200 text-sm block">Reduced Motion Mode</span>
-            <span className="text-xs text-slate-400">
-              Disables playful bouncy springs, floating particles, and large sliding page transitions.
-            </span>
-          </div>
-          {/* Animated Toggle Switch */}
-          <button
-            onClick={handleToggleReducedMotion}
-            className={`w-14 h-8 rounded-full p-1 transition-colors relative cursor-pointer border ${
-              reducedMotion 
-                ? 'bg-cyan-500 border-cyan-400' 
-                : 'bg-slate-800 border-slate-700'
+      {/* Action Notification Banner */}
+      <AnimatePresence>
+        {actionMessage.text && (
+          <motion.div 
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+              actionMessage.type === 'error'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
             }`}
-            aria-label="Toggle Reduced Motion"
           >
-            <motion.div
-              layout
-              transition={SPRING_SMOOTH}
-              className={`w-6 h-6 rounded-full bg-white shadow-md ${
-                reducedMotion ? 'ml-auto' : 'ml-0'
+            {actionMessage.type === 'error' ? (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            <span>{actionMessage.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'study', label: 'Study & Daily Goals', icon: Target },
+          { id: 'guides', label: 'Spaced Repetition & XP Guide', icon: BrainCircuit },
+          { id: 'account', label: 'Account & Security', icon: User },
+          { id: 'data', label: 'Data & Backups', icon: Download },
+          { id: 'appearance', label: 'Accessibility & Sound', icon: Sliders },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
               }`}
-            />
-          </button>
-        </div>
+            >
+              {isActive && (
+                <motion.div
+                  layoutId={reducedMotion ? undefined : "settingsActiveTab"}
+                  transition={SPRING_SMOOTH}
+                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
+                />
+              )}
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Account Profile Status */}
-      <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
-          <ShieldCheck className="w-5 h-5 text-cyan-400" /> Account & Isolation Status
-        </div>
-        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <span className="text-slate-400 block">Current User:</span>
-              <span className="font-bold text-slate-200 text-sm">
-                {currentUser ? currentUser.email : 'Not logged in'}
-              </span>
-            </div>
-            <span className="px-3 py-1 rounded-full font-bold self-start sm:self-auto bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              Firebase Cloud Sync (Isolated User)
-            </span>
-          </div>
-
-          {currentUser && (
-            <div className="pt-2 border-t border-slate-800/80 space-y-2">
-              <div>
-                <span className="text-slate-400 block">User Name & ID:</span>
-                <span className="font-bold text-slate-200">
-                  {currentUser.displayName || 'Member'} &bull; <code className="text-cyan-400 font-mono text-[11px]">{currentUser.uid}</code>
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block">Dedicated Database Paths:</span>
-                <div className="space-y-1 mt-1 font-mono text-[11px]">
-                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}</code> <span className="text-slate-500 font-sans">(Profile, XP, Streak, Badges, Roadmap)</span></div>
-                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}/problems</code> <span className="text-slate-500 font-sans">(DSA problems & spaced repetitions)</span></div>
-                  <div><code className="text-cyan-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">/users/{currentUser.uid}/tasks</code> <span className="text-slate-500 font-sans">(Daily accountability tasks)</span></div>
+      {/* TAB 1: Study & Daily Goals */}
+      {activeTab === 'study' && (
+        <motion.div 
+          initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING_SMOOTH}
+          className="space-y-6"
+        >
+          {/* Daily Practice Targets */}
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                  <Target className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-100">Daily Preparation Targets</h2>
+                  <p className="text-xs text-slate-400">Define your daily problem quota and accountability goals</p>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Your problems, tasks, streak, roadmap, and XP are stored separately inside your private document. Other users cannot read or modify your data.
-              </p>
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                Active Streak: {streak} {streak === 1 ? 'day' : 'days'}
+              </span>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Firebase Config Info */}
-      <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
-          <Database className="w-5 h-5 text-purple-400" /> Firebase Connection
-        </div>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Project ID: <code className="text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">dsa-tracker-197f7</code>
-          <br />
-          Auth Domain: <code className="text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 mt-1 inline-block">dsa-tracker-197f7.firebaseapp.com</code>
-        </p>
-      </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Daily Problems Target */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Daily DSA Target (Problems/Day)
+                </label>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 5].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setDailyProblemGoal(count)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        dailyProblemGoal === count
+                          ? 'bg-cyan-500 text-white border-cyan-400 shadow-lg shadow-cyan-500/20'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                    >
+                      {count} {count === 1 ? 'Problem' : 'Problems'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Recommended: 2 problems per day builds steady retention without burnout.
+                </p>
+              </div>
 
-      {/* Backup & Data Controls */}
-      <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-4">
-        <h3 className="text-slate-200 font-bold text-sm">Data Tools & Backup</h3>
-        <div className="flex flex-wrap gap-4">
-          <MotionButton
-            onClick={handleExport}
-            className="px-4 py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-bold flex items-center gap-2"
-          >
-            <Download className="w-4 h-4 text-cyan-400" /> Export My Data (.json)
-          </MotionButton>
-
-          <MotionButton
-            onClick={handleLoadStarterData}
-            className="px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-bold flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4 text-cyan-400" /> Load Starter Pack
-          </MotionButton>
-
-          <MotionButton
-            onClick={handleClearData}
-            className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold flex items-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" /> Reset / Clear My Data
-          </MotionButton>
-        </div>
-      </div>
-
-      {/* Web Loading Animation Showcase */}
-      <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
-              <Globe className="w-5 h-5 text-cyan-400 animate-spin" /> Web Loading Animation
+              {/* Daily Tasks Target */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Daily Habit Tasks Target (Tasks/Day)
+                </label>
+                <div className="flex items-center gap-2">
+                  {[2, 3, 4, 6].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setDailyTaskGoal(count)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        dailyTaskGoal === count
+                          ? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/20'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                    >
+                      {count} {count === 1 ? 'Task' : 'Tasks'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Non-negotiable habits: Revision, mock contest, CS fundamentals, System Design.
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-400 mt-1 max-w-xl">
-              Reactive cyber web loading animation with dynamic SVG spiderweb strands, orbiting data packets, and live network telemetry.
-            </p>
+
+            {/* Language & Target Career */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Code className="w-3.5 h-3.5 text-cyan-400" /> Primary Coding Language
+                </label>
+                <select
+                  value={preferredLanguage}
+                  onChange={(e) => setPreferredLanguage(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
+                >
+                  {PROGRAMMING_LANGUAGES.map((lang) => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500">
+                  Sets your default language preference for problem solution templates.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-purple-400" /> Target Career Role
+                </label>
+                <select
+                  value={targetRole}
+                  onChange={(e) => setTargetRole(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
+                >
+                  {TARGET_ROLES.map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500">
+                  Customizes suggested DSA focus areas (e.g. Graphs, DP, Concurrency).
+                </p>
+              </div>
+            </div>
+
+            {/* Target Company & Interview Target Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">
+                  Target Company Tier
+                </label>
+                <select
+                  value={targetCompany}
+                  onChange={(e) => setTargetCompany(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
+                >
+                  {TARGET_COMPANIES.map((comp) => (
+                    <option key={comp} value={comp}>{comp}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" /> Target Interview / Season Date
+                </label>
+                <input
+                  type="date"
+                  value={targetInterviewDate}
+                  onChange={(e) => setTargetInterviewDate(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Keep your countdown visible across your command center.
+                </p>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end pt-2">
+              <MotionButton
+                onClick={handleSaveStudyGoals}
+                disabled={isSavingPreferences}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+              >
+                {isSavingPreferences ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" /> Save Study Preferences
+                  </>
+                )}
+              </MotionButton>
+            </div>
           </div>
-          <MotionButton
-            onClick={() => {
-              setIsFullscreenLoaderActive(true);
-              setTimeout(() => setIsFullscreenLoaderActive(false), 3500);
-            }}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-2 shrink-0 shadow-lg shadow-cyan-500/20"
-          >
-            <Globe className="w-4 h-4" /> Launch Fullscreen Demo (3.5s)
-          </MotionButton>
-        </div>
+        </motion.div>
+      )}
 
-        {/* In-page live preview card */}
-        <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 flex flex-col items-center justify-center">
-          <span className="text-[10px] font-mono text-cyan-400/80 uppercase tracking-wider mb-2">Live Component Preview</span>
-          <WebLoader size="md" showProgress={true} showBadges={true} />
-        </div>
-      </div>
+      {/* TAB 2: Spaced Repetition & XP Guide */}
+      {activeTab === 'guides' && (
+        <motion.div 
+          initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING_SMOOTH}
+          className="space-y-6"
+        >
+          {/* Spaced Repetition Engine Breakdown */}
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-5">
+            <div className="flex items-center gap-2.5 border-b border-slate-800/80 pb-4">
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+                <BrainCircuit className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-100">Spaced Repetition Recall Engine</h2>
+                <p className="text-xs text-slate-400">How GrindTrack prevents the forgetting curve for DSA patterns</p>
+              </div>
+            </div>
 
-      {/* Fullscreen Overlay Demo */}
-      {isFullscreenLoaderActive && (
-        <div onClick={() => setIsFullscreenLoaderActive(false)} className="cursor-pointer">
-          <WebLoadingScreen isVisible={true} message="Simulating Web Mesh Handshake • Click to exit" />
-        </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              When you mark a problem as <span className="text-emerald-400 font-semibold">Solved</span>, GrindTrack automatically schedules future review sessions using the progressive Leitner memory schedule. Each successful revision reinforces pattern recognition:
+            </p>
+
+            {/* Interactive Schedule Visualizer */}
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              {[
+                { step: 'Stage 1', days: '+1 Day', label: 'Initial Recall', desc: 'Verify problem approach within 24h' },
+                { step: 'Stage 2', days: '+3 Days', label: 'Consolidation', desc: 'Re-implement core algorithmic loop' },
+                { step: 'Stage 3', days: '+7 Days', label: 'One-Week Retention', desc: 'Code from scratch without hints' },
+                { step: 'Stage 4', days: '+14 Days', label: 'Pattern Fortification', desc: 'Identify edge cases & variations' },
+                { step: 'Stage 5', days: '+30 Days', label: 'Mastered Memory', desc: 'Long-term memory consolidated' },
+              ].map((item, idx) => (
+                <div 
+                  key={idx} 
+                  className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 hover:border-cyan-500/40 transition-colors space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">{item.step}</span>
+                    <span className="text-xs font-bold text-slate-200">{item.days}</span>
+                  </div>
+                  <h4 className="text-xs font-semibold text-slate-200">{item.label}</h4>
+                  <p className="text-[11px] text-slate-500 leading-tight">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Status Legend */}
+            <div className="pt-2">
+              <h4 className="text-xs font-bold text-slate-300 mb-2">Revision Queue Status Legend</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full bg-rose-500 shadow-md shadow-rose-500/30" />
+                  <div>
+                    <span className="text-xs font-bold text-rose-400 block">Overdue</span>
+                    <span className="text-[11px] text-slate-500">Scheduled date has passed; needs immediate review</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full bg-amber-400 shadow-md shadow-amber-400/30 animate-pulse" />
+                  <div>
+                    <span className="text-xs font-bold text-amber-300 block">Due Today</span>
+                    <span className="text-[11px] text-slate-500">Scheduled for today; tackles in Today's Focus panel</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30" />
+                  <div>
+                    <span className="text-xs font-bold text-emerald-400 block">Upcoming</span>
+                    <span className="text-[11px] text-slate-500">Scheduled in upcoming days; memory is currently fresh</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Gamification & XP System Rules */}
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-100">XP Scoring & Rank Progression</h2>
+                  <p className="text-xs text-slate-400">Earn experience points to climb developer ranks</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400 block">Your Current Rank:</span>
+                <span className="text-xs font-bold text-cyan-400">{levelInfo.title} (Level {levelInfo.level})</span>
+              </div>
+            </div>
+
+            {/* XP Earning Matrix */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { title: 'Easy Problem', xp: `+${XP_REWARDS.PROBLEM_EASY} XP`, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+                { title: 'Medium Problem', xp: `+${XP_REWARDS.PROBLEM_MEDIUM} XP`, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+                { title: 'Hard Problem', xp: `+${XP_REWARDS.PROBLEM_HARD} XP`, color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+                { title: 'Spaced Revision', xp: `+${XP_REWARDS.PROBLEM_REVISION} XP`, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+                { title: 'Daily Task', xp: `+${XP_REWARDS.TASK_COMPLETE} XP`, color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+                { title: 'Streak Bonus', xp: `+${XP_REWARDS.DAILY_STREAK_BONUS} XP`, color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
+              ].map((item, i) => (
+                <div key={i} className={`p-3 rounded-xl border text-center space-y-1 ${item.color}`}>
+                  <span className="text-[11px] font-semibold block text-slate-300">{item.title}</span>
+                  <span className="text-sm font-black">{item.xp}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Ranks Ladder */}
+            <div className="pt-2">
+              <h4 className="text-xs font-bold text-slate-300 mb-3">All Developer Ranks</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {RANKS.map((rank) => {
+                  const isCurrent = levelInfo.level === rank.level;
+                  return (
+                    <div
+                      key={rank.level}
+                      className={`p-3 rounded-xl border transition-all ${
+                        isCurrent
+                          ? 'bg-slate-900 border-cyan-500/80 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-500/30'
+                          : 'bg-slate-950/60 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <span className="font-mono text-slate-500 font-bold">LVL {rank.level}</span>
+                        {isCurrent && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-cyan-500 text-slate-950">YOU</span>
+                        )}
+                      </div>
+                      <h5 className="text-xs font-bold text-slate-200 truncate">{rank.title}</h5>
+                      <span className="text-[10px] text-slate-500 block">{rank.minXp} XP</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* TAB 3: Account & Security */}
+      {activeTab === 'account' && (
+        <motion.div 
+          initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING_SMOOTH}
+          className="space-y-6"
+        >
+          {/* User Profile Card */}
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-5">
+            <div className="flex items-center gap-2.5 border-b border-slate-800/80 pb-4">
+              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-100">Account Overview & Sync</h2>
+                <p className="text-xs text-slate-400">Authenticated profile details and cloud backup sync</p>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-cyan-500/20">
+                  {currentUser?.photoURL ? (
+                    <img src={currentUser.photoURL} alt="Avatar" className="w-full h-full rounded-2xl object-cover" />
+                  ) : (
+                    (currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase()
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-100">
+                      {currentUser?.displayName || userProfile?.displayName || 'GrindTrack Member'}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3" /> Cloud Synced
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+                    <Mail className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{currentUser?.email || 'Logged in locally'}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Target: <span className="text-slate-300 font-medium">{userProfile?.targetRole || 'Software Engineer'}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <Link
+                  to="/profile"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-cyan-400" /> View Public Profile
+                </Link>
+              </div>
+            </div>
+
+            {/* Account Security & Password Reset */}
+            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="font-bold text-slate-200 text-xs flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-purple-400" /> Password & Security
+                </span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">
+                  Send a secure verification email to reset your account password.
+                </span>
+              </div>
+
+              <MotionButton
+                onClick={handlePasswordReset}
+                disabled={isSendingReset}
+                className="px-4 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center gap-2 disabled:opacity-50 shrink-0"
+              >
+                {isSendingReset ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Sending...
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-3.5 h-3.5" /> Send Password Reset Email
+                  </>
+                )}
+              </MotionButton>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* TAB 4: Data & Backups */}
+      {activeTab === 'data' && (
+        <motion.div 
+          initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING_SMOOTH}
+          className="space-y-6"
+        >
+          {/* Data Export & Import */}
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-6">
+            <div className="flex items-center gap-2.5 border-b border-slate-800/80 pb-4">
+              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                <Download className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-100">Data Management & Backups</h2>
+                <p className="text-xs text-slate-400">Export your solved questions and notes or restore from a backup</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Export Card */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <Download className="w-4 h-4 text-cyan-400" /> Export JSON Backup
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Download an offline JSON copy containing all {problems.length} problems, {tasks.length} tasks, custom notes, revision history, and current XP.
+                  </p>
+                </div>
+                <MotionButton
+                  onClick={handleExport}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-850 text-slate-200 border border-slate-750 text-xs font-bold flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4 text-cyan-400" /> Export My Data (.json)
+                </MotionButton>
+              </div>
+
+              {/* Import Card */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <Upload className="w-4 h-4 text-purple-400" /> Restore from JSON Backup
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Restore previously exported GrindTrack data from another machine or backup file to sync your progress.
+                  </p>
+                </div>
+                <div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".json"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <MotionButton
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-2"
+                  >
+                    <Upload className="w-4 h-4 text-purple-400" /> Select Backup File (.json)
+                  </MotionButton>
+                </div>
+              </div>
+            </div>
+
+            {/* Load Curated Pack */}
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <span className="font-bold text-slate-200 text-xs flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-400" /> Curated DSA Starter Pack
+                </span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">
+                  Quickly seed your account with classic NeetCode / Striver-style foundational DSA problems and daily tasks.
+                </span>
+              </div>
+              <MotionButton
+                onClick={handleLoadStarterData}
+                className="px-4 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-bold flex items-center gap-2 shrink-0"
+              >
+                <Sparkles className="w-4 h-4" /> Load Starter Pack
+              </MotionButton>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="p-4 rounded-xl bg-rose-950/10 border border-rose-500/20 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-rose-400">
+                <AlertTriangle className="w-4 h-4 text-rose-400" /> Danger Zone
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Permanently delete all logged problems, custom revision dates, completed daily tasks, and reset your XP score back to 0.
+              </p>
+              <div>
+                <MotionButton
+                  onClick={handleClearData}
+                  className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" /> Reset All My Data
+                </MotionButton>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* TAB 5: Accessibility & Sound */}
+      {activeTab === 'appearance' && (
+        <motion.div 
+          initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING_SMOOTH}
+          className="space-y-6"
+        >
+          <div className="p-6 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 space-y-6">
+            <div className="flex items-center gap-2.5 border-b border-slate-800/80 pb-4">
+              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                <Sliders className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-100">Interface & Accessibility Preferences</h2>
+                <p className="text-xs text-slate-400">Configure visual motion sensitivity, sound effects, and feedback</p>
+              </div>
+            </div>
+
+            {/* Reduced Motion Toggle */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-200 text-sm block">Reduced Motion Mode</span>
+                <span className="text-xs text-slate-400">
+                  Replaces bouncy spring transitions with subtle cross-fades for motion sensitivity.
+                </span>
+              </div>
+              <button
+                onClick={handleToggleReducedMotion}
+                className={`w-14 h-8 rounded-full p-1 transition-colors relative cursor-pointer border ${
+                  reducedMotion 
+                    ? 'bg-cyan-500 border-cyan-400' 
+                    : 'bg-slate-800 border-slate-700'
+                }`}
+                aria-label="Toggle Reduced Motion"
+              >
+                <motion.div
+                  layout
+                  transition={SPRING_SMOOTH}
+                  className={`w-6 h-6 rounded-full bg-white shadow-md ${
+                    reducedMotion ? 'ml-auto' : 'ml-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Sound FX Toggle */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-200 text-sm block flex items-center gap-2">
+                  {soundEnabled ? <Volume2 className="w-4 h-4 text-cyan-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+                  Sound & Celebration Haptics
+                </span>
+                <span className="text-xs text-slate-400">
+                  Play subtle auditory celebration chime when leveling up or completing daily streaks.
+                </span>
+              </div>
+              <button
+                onClick={handleToggleSound}
+                className={`w-14 h-8 rounded-full p-1 transition-colors relative cursor-pointer border ${
+                  soundEnabled 
+                    ? 'bg-purple-600 border-purple-500' 
+                    : 'bg-slate-800 border-slate-700'
+                }`}
+                aria-label="Toggle Sound Effects"
+              >
+                <motion.div
+                  layout
+                  transition={SPRING_SMOOTH}
+                  className={`w-6 h-6 rounded-full bg-white shadow-md ${
+                    soundEnabled ? 'ml-auto' : 'ml-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Quick Tips & Keyboard Shortcuts */}
+            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+              <span className="font-bold text-slate-200 text-xs flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-400" /> Keyboard Shortcuts
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-slate-400">Open Command Palette</span>
+                  <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[11px] border border-slate-700">⌘K / Ctrl+K</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-slate-400">Quick Search Navigation</span>
+                  <kbd className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[11px] border border-slate-700">/</kbd>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
     </div>
   );

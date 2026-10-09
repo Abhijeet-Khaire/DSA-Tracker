@@ -7,7 +7,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, googleProvider, db, formatAuthError } from '../lib/firebase';
@@ -170,6 +171,14 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const sendPasswordReset = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email || currentUser?.email);
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
+  };
+
   const value = {
     currentUser,
     isDemoMode: false,
@@ -178,6 +187,7 @@ export function AuthProvider({ children }) {
     loginWithGoogle,
     logout,
     updateUserProfileData,
+    sendPasswordReset,
   };
 
   return (

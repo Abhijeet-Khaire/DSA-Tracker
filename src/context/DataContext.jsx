@@ -599,6 +599,51 @@ export function DataProvider({ children }) {
     }
   };
 
+  // Import / Restore user data from JSON backup
+  const importUserData = async (backupData) => {
+    if (!backupData || typeof backupData !== 'object') {
+      throw new Error('Invalid backup file format');
+    }
+
+    const newProblems = Array.isArray(backupData.problems) ? backupData.problems : [];
+    const newTasks = Array.isArray(backupData.tasks) ? backupData.tasks : [];
+    const newXp = typeof backupData.xp === 'number' ? backupData.xp : 0;
+    const newLogs = backupData.dailyLogs && typeof backupData.dailyLogs === 'object' ? backupData.dailyLogs : dailyLogs;
+    const newAch = Array.isArray(backupData.unlockedAchievements) ? backupData.unlockedAchievements : unlockedAchievements;
+
+    setProblems(newProblems);
+    setTasks(newTasks);
+    setXp(newXp);
+    setDailyLogs(newLogs);
+    setUnlockedAchievements(newAch);
+
+    if (currentUser && !isDemoMode) {
+      for (const p of problems) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', p.id));
+        } catch (_) {}
+      }
+      for (const t of tasks) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id));
+        } catch (_) {}
+      }
+
+      for (const p of newProblems) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'problems', p.id), p);
+      }
+      for (const t of newTasks) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id), t);
+      }
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        xp: newXp,
+        dailyLogs: newLogs,
+        unlockedAchievements: newAch,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+  };
+
   // Save Roadmap module progress scoped strictly to the current user
   const saveRoadmapProgress = async (roadmapId, completedKeys) => {
     const updated = {
@@ -698,6 +743,7 @@ export function DataProvider({ children }) {
     saveUserProfile,
     loadStarterData,
     clearUserData,
+    importUserData,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
