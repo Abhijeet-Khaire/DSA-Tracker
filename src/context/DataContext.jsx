@@ -74,6 +74,35 @@ export function DataProvider({ children }) {
   const [activeXpReward, setActiveXpReward] = useState(null);
   const xpTimerRef = useRef(null);
 
+  // Synchronous State Reference to prevent stale closures during concurrent Firestore writes
+  const stateRef = useRef({
+    problems: [],
+    tasks: [],
+    dailyLogs: {},
+    xp: 0,
+    unlockedAchievements: [],
+    roadmapProgress: {},
+    userProfile: {
+      bio: 'Data Structures & Algorithms Enthusiast',
+      targetRole: 'Software Engineer',
+      leetcodeUsername: '',
+      githubUsername: '',
+    },
+  });
+
+  // Keep stateRef immediately updated with latest state
+  useEffect(() => {
+    stateRef.current = {
+      problems,
+      tasks,
+      dailyLogs,
+      xp,
+      unlockedAchievements,
+      roadmapProgress,
+      userProfile,
+    };
+  }, [problems, tasks, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile]);
+
   // Sync state when active user or demo mode changes
   useEffect(() => {
     // Purge any residual demo keys from localStorage
@@ -89,10 +118,24 @@ export function DataProvider({ children }) {
       setUnlockedAchievements([]);
       setRoadmapProgress({});
       setIsLoadingData(false);
+      stateRef.current = {
+        problems: [],
+        tasks: [],
+        dailyLogs: {},
+        xp: 0,
+        unlockedAchievements: [],
+        roadmapProgress: {},
+        userProfile: {
+          bio: 'Data Structures & Algorithms Enthusiast',
+          targetRole: 'Software Engineer',
+          leetcodeUsername: '',
+          githubUsername: '',
+        },
+      };
       return;
     }
 
-    // Authenticated User: Load user-scoped cached storage first to prevent flash of wrong data
+    // Authenticated User: Load user-scoped cached storage first to prevent flash of empty data
     setIsLoadingData(true);
     const userProbsKey = getStorageKey(currentUid, false, 'problems');
     const userTasksKey = getStorageKey(currentUid, false, 'tasks');
@@ -115,29 +158,45 @@ export function DataProvider({ children }) {
     setTasks(cleanCachedTasks);
 
     const cachedLogs = localStorage.getItem(userLogsKey);
-    setDailyLogs(cachedLogs ? JSON.parse(cachedLogs) : {});
+    const cleanCachedLogs = cachedLogs ? JSON.parse(cachedLogs) : {};
+    setDailyLogs(cleanCachedLogs);
 
     const cachedXp = localStorage.getItem(userXpKey);
-    setXp(cachedXp ? parseInt(cachedXp, 10) : 0);
+    const cleanCachedXp = cachedXp ? parseInt(cachedXp, 10) : 0;
+    setXp(cleanCachedXp);
 
     const cachedAch = localStorage.getItem(userAchKey);
-    setUnlockedAchievements(cachedAch ? JSON.parse(cachedAch) : []);
+    const cleanCachedAch = cachedAch ? JSON.parse(cachedAch) : [];
+    setUnlockedAchievements(cleanCachedAch);
 
     const cachedRoadmap = localStorage.getItem(userRoadmapKey);
-    setRoadmapProgress(cachedRoadmap ? JSON.parse(cachedRoadmap) : {});
+    const cleanCachedRoadmap = cachedRoadmap ? JSON.parse(cachedRoadmap) : {};
+    setRoadmapProgress(cleanCachedRoadmap);
 
     const cachedProfile = localStorage.getItem(userProfileKey);
-    setUserProfile(cachedProfile ? JSON.parse(cachedProfile) : {
+    const cleanCachedProfile = cachedProfile ? JSON.parse(cachedProfile) : {
       bio: 'Data Structures & Algorithms Enthusiast',
       targetRole: 'Software Engineer',
       leetcodeUsername: '',
       githubUsername: '',
-    });
+    };
+    setUserProfile(cleanCachedProfile);
+
+    // Initialize stateRef with cached values
+    stateRef.current = {
+      problems: cleanCachedProbs,
+      tasks: cleanCachedTasks,
+      dailyLogs: cleanCachedLogs,
+      xp: cleanCachedXp,
+      unlockedAchievements: cleanCachedAch,
+      roadmapProgress: cleanCachedRoadmap,
+      userProfile: cleanCachedProfile,
+    };
 
     // Setup Realtime Firestore Listeners for this specific user
     const userDocRef = doc(db, 'users', currentUid);
 
-    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile, Roadmap Progress, Problems, Tasks)
+    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile, Roadmap Progress)
     const userDocUnsub = onSnapshot(userDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -146,48 +205,53 @@ export function DataProvider({ children }) {
         const userXp = data.userInfo?.xp !== undefined ? data.userInfo.xp : data.xp;
         if (userXp !== undefined) {
           setXp(userXp);
+          stateRef.current.xp = userXp;
           localStorage.setItem(userXpKey, String(userXp));
         }
 
         const userBadges = data.userInfo?.badges || data.badges || data.unlockedAchievements;
         if (userBadges !== undefined) {
           setUnlockedAchievements(userBadges);
+          stateRef.current.unlockedAchievements = userBadges;
           localStorage.setItem(userAchKey, JSON.stringify(userBadges));
         }
 
         const userRoadmap = data.userInfo?.roadmap || data.roadmap || data.roadmapProgress;
         if (userRoadmap !== undefined) {
           setRoadmapProgress(userRoadmap);
+          stateRef.current.roadmapProgress = userRoadmap;
           localStorage.setItem(userRoadmapKey, JSON.stringify(userRoadmap));
         }
 
         const userProf = data.userInfo?.profile || data.profile;
         if (userProf !== undefined) {
           setUserProfile(userProf);
+          stateRef.current.userProfile = userProf;
           localStorage.setItem(userProfileKey, JSON.stringify(userProf));
         }
 
         if (data.dailyLogs !== undefined) {
           setDailyLogs(data.dailyLogs);
+          stateRef.current.dailyLogs = data.dailyLogs;
           localStorage.setItem(userLogsKey, JSON.stringify(data.dailyLogs));
         }
 
-        // If direct arrays exist on document, purge any demo items and sync
-        if (Array.isArray(data.problems)) {
+        // Only hydrate problems/tasks from parent doc if state is completely empty
+        if (Array.isArray(data.problems) && stateRef.current.problems.length === 0) {
           const cleanProbs = data.problems.filter((p) => !DEMO_PROBLEM_IDS.includes(p.id));
-          setProblems(cleanProbs);
-          localStorage.setItem(userProbsKey, JSON.stringify(cleanProbs));
-          if (cleanProbs.length !== data.problems.length) {
-            syncUserToFirestore({ problems: cleanProbs });
+          if (cleanProbs.length > 0) {
+            setProblems(cleanProbs);
+            stateRef.current.problems = cleanProbs;
+            localStorage.setItem(userProbsKey, JSON.stringify(cleanProbs));
           }
         }
 
-        if (Array.isArray(data.tasks)) {
+        if (Array.isArray(data.tasks) && stateRef.current.tasks.length === 0) {
           const cleanTasks = data.tasks.filter((t) => !DEMO_TASK_IDS.includes(t.id));
-          setTasks(cleanTasks);
-          localStorage.setItem(userTasksKey, JSON.stringify(cleanTasks));
-          if (cleanTasks.length !== data.tasks.length) {
-            syncUserToFirestore({ tasks: cleanTasks });
+          if (cleanTasks.length > 0) {
+            setTasks(cleanTasks);
+            stateRef.current.tasks = cleanTasks;
+            localStorage.setItem(userTasksKey, JSON.stringify(cleanTasks));
           }
         }
       } else {
@@ -234,37 +298,39 @@ export function DataProvider({ children }) {
       setIsLoadingData(false);
     });
 
-    // 2. User Problems Subcollection Sync (/users/{uid}/problems)
+    // 2. Authoritative User Problems Subcollection Sync (/users/{uid}/problems)
     const probCollectionRef = collection(userDocRef, 'problems');
     const probUnsub = onSnapshot(probCollectionRef, (snap) => {
       const list = [];
       snap.forEach((d) => {
         if (DEMO_PROBLEM_IDS.includes(d.id)) {
-          // Permanently purge legacy demo problem from Firestore
           deleteDoc(doc(db, 'users', currentUid, 'problems', d.id)).catch(() => {});
         } else {
           list.push({ id: d.id, ...d.data() });
         }
       });
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       setProblems(list);
+      stateRef.current.problems = list;
       localStorage.setItem(userProbsKey, JSON.stringify(list));
     }, (err) => {
       console.error('Firestore problems snapshot error:', err);
     });
 
-    // 3. User Tasks Subcollection Sync (/users/{uid}/tasks)
+    // 3. Authoritative User Tasks Subcollection Sync (/users/{uid}/tasks)
     const taskCollectionRef = collection(userDocRef, 'tasks');
     const taskUnsub = onSnapshot(taskCollectionRef, (snap) => {
       const list = [];
       snap.forEach((d) => {
         if (DEMO_TASK_IDS.includes(d.id)) {
-          // Permanently purge legacy demo task from Firestore
           deleteDoc(doc(db, 'users', currentUid, 'tasks', d.id)).catch(() => {});
         } else {
           list.push({ id: d.id, ...d.data() });
         }
       });
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       setTasks(list);
+      stateRef.current.tasks = list;
       localStorage.setItem(userTasksKey, JSON.stringify(list));
     }, (err) => {
       console.error('Firestore tasks snapshot error:', err);
@@ -295,16 +361,16 @@ export function DataProvider({ children }) {
   const calculateStreak = () => {
     let streak = 0;
     const today = new Date();
+    const currLogs = stateRef.current.dailyLogs || dailyLogs;
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const dateStr = format(d, 'yyyy-MM-dd');
-      const log = dailyLogs[dateStr];
+      const log = currLogs[dateStr];
 
       if (log && log.activeDay && (log.problemsSolved > 0 || log.tasksCompleted > 0)) {
         streak++;
       } else if (i === 0) {
-        // Today might not have activity yet, keep checking from yesterday
         continue;
       } else {
         break;
@@ -319,14 +385,28 @@ export function DataProvider({ children }) {
     if (!currentUser || isDemoMode) return;
 
     const currentStreak = calculateStreak();
-    const finalProfile = overrides.userProfile !== undefined ? overrides.userProfile : userProfile;
-    const finalXp = overrides.xp !== undefined ? overrides.xp : xp;
+    const curr = stateRef.current;
+
+    const finalProfile = overrides.userProfile !== undefined ? overrides.userProfile : (overrides.profile !== undefined ? overrides.profile : curr.userProfile);
+    const finalXp = overrides.xp !== undefined ? overrides.xp : curr.xp;
     const finalStreak = overrides.streak !== undefined ? overrides.streak : currentStreak;
-    const finalBadges = overrides.unlockedAchievements !== undefined ? overrides.unlockedAchievements : (Array.isArray(overrides.badges) ? overrides.badges : unlockedAchievements);
-    const finalRoadmap = overrides.roadmapProgress !== undefined ? overrides.roadmapProgress : (overrides.roadmap !== undefined ? overrides.roadmap : roadmapProgress);
-    const finalProblems = overrides.problems !== undefined ? overrides.problems : problems;
-    const finalTasks = overrides.tasks !== undefined ? overrides.tasks : tasks;
-    const finalDailyLogs = overrides.dailyLogs !== undefined ? overrides.dailyLogs : dailyLogs;
+    const finalBadges = overrides.unlockedAchievements !== undefined ? overrides.unlockedAchievements : (Array.isArray(overrides.badges) ? overrides.badges : curr.unlockedAchievements);
+    const finalRoadmap = overrides.roadmapProgress !== undefined ? overrides.roadmapProgress : (overrides.roadmap !== undefined ? overrides.roadmap : curr.roadmapProgress);
+    const finalProblems = overrides.problems !== undefined ? overrides.problems : curr.problems;
+    const finalTasks = overrides.tasks !== undefined ? overrides.tasks : curr.tasks;
+    const finalDailyLogs = overrides.dailyLogs !== undefined ? overrides.dailyLogs : curr.dailyLogs;
+
+    // Immediately keep stateRef in sync to avoid any race conditions
+    stateRef.current = {
+      ...curr,
+      userProfile: finalProfile,
+      xp: finalXp,
+      unlockedAchievements: finalBadges,
+      roadmapProgress: finalRoadmap,
+      problems: finalProblems,
+      tasks: finalTasks,
+      dailyLogs: finalDailyLogs,
+    };
 
     const fullPayload = {
       uid: currentUser.uid,
@@ -367,13 +447,6 @@ export function DataProvider({ children }) {
     }
   };
 
-  // Automatic initial backfill and sync to Firestore when authenticated
-  useEffect(() => {
-    if (currentUser && !isDemoMode && !isLoadingData) {
-      syncUserToFirestore();
-    }
-  }, [currentUser, isDemoMode, isLoadingData]);
-
   // Check achievements unlock
   const checkAchievements = async (currentProblems, currentTasks, currentStreak) => {
     const solvedCount = currentProblems.filter(p => p.status === 'solved').length;
@@ -389,7 +462,7 @@ export function DataProvider({ children }) {
       streak: currentStreak,
     };
 
-    let updatedAchievements = [...unlockedAchievements];
+    let updatedAchievements = [...stateRef.current.unlockedAchievements];
     let newlyEarned = null;
 
     ACHIEVEMENTS.forEach((ach) => {
@@ -400,17 +473,22 @@ export function DataProvider({ children }) {
     });
 
     if (newlyEarned) {
+      stateRef.current.unlockedAchievements = updatedAchievements;
       setUnlockedAchievements(updatedAchievements);
       addXp(newlyEarned.xpReward, `Achievement: ${newlyEarned.title}`);
       setNewlyUnlocked(newlyEarned);
-      syncUserToFirestore({ unlockedAchievements: updatedAchievements });
+      await syncUserToFirestore({ unlockedAchievements: updatedAchievements });
     }
   };
 
   // Helper for adding XP with rapid-reward grouping and Firestore persistence
   const addXp = async (amount, reason = '') => {
-    const nextXp = Math.max(0, xp + amount);
+    const nextXp = Math.max(0, stateRef.current.xp + amount);
+    stateRef.current.xp = nextXp;
     setXp(nextXp);
+
+    const userXpKey = getStorageKey(currentUid, isDemoMode, 'xp');
+    localStorage.setItem(userXpKey, String(nextXp));
 
     if (amount > 0) {
       if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
@@ -436,14 +514,15 @@ export function DataProvider({ children }) {
     }
 
     if (currentUser && !isDemoMode) {
-      syncUserToFirestore({ xp: nextXp });
+      await syncUserToFirestore({ xp: nextXp });
     }
   };
 
-  // Log today's activity with Firestore persistence (supports both increment and decrement)
+  // Log today's activity with Firestore persistence
   const recordDailyActivity = async (type, amount = 1, xpEarned = 0, specificDate = null) => {
     const targetDate = specificDate || format(new Date(), 'yyyy-MM-dd');
-    const current = dailyLogs[targetDate] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
+    const currLogs = stateRef.current.dailyLogs;
+    const current = currLogs[targetDate] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
     
     const nextProblemsSolved = Math.max(0, (current.problemsSolved || 0) + (type === 'problem' ? amount : 0));
     const nextTasksCompleted = Math.max(0, (current.tasksCompleted || 0) + (type === 'task' ? amount : 0));
@@ -451,7 +530,7 @@ export function DataProvider({ children }) {
     const isActiveDay = nextProblemsSolved > 0 || nextTasksCompleted > 0;
 
     const nextLogs = {
-      ...dailyLogs,
+      ...currLogs,
       [targetDate]: {
         ...current,
         problemsSolved: nextProblemsSolved,
@@ -461,17 +540,18 @@ export function DataProvider({ children }) {
       }
     };
 
+    stateRef.current.dailyLogs = nextLogs;
     setDailyLogs(nextLogs);
 
     const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
     localStorage.setItem(userLogsKey, JSON.stringify(nextLogs));
 
     if (currentUser && !isDemoMode) {
-      syncUserToFirestore({ dailyLogs: nextLogs });
+      await syncUserToFirestore({ dailyLogs: nextLogs });
     }
   };
 
-  // Problem actions (stored under /users/{uid}/problems/{probId})
+  // Problem actions (stored under /users/{uid}/problems/{probId} and parent doc)
   const addProblem = async (probData) => {
     const newProb = {
       id: `prob-${Date.now()}`,
@@ -483,7 +563,12 @@ export function DataProvider({ children }) {
       createdAt: new Date().toISOString(),
     };
 
-    setProblems((prev) => [newProb, ...prev]);
+    const nextProblems = [newProb, ...stateRef.current.problems];
+    stateRef.current.problems = nextProblems;
+    setProblems(nextProblems);
+
+    const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+    localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
     let addedXp = 0;
     if (newProb.status === 'solved') {
@@ -501,8 +586,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({ problems: nextProblems, ...(addedXp > 0 ? { xp: xp + addedXp } : {}) });
-    checkAchievements(nextProblems, tasks, calculateStreak());
+    const currentXp = stateRef.current.xp;
+    await syncUserToFirestore({ problems: nextProblems, ...(addedXp > 0 ? { xp: currentXp + addedXp } : {}) });
+    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
   };
 
   const updateProblem = async (id, updates) => {
@@ -510,40 +596,40 @@ export function DataProvider({ children }) {
     let updatedProblem = null;
     let nextProblems = [];
 
-    setProblems((prev) => {
-      nextProblems = prev.map((p) => {
-        if (p.id === id) {
-          const wasSolved = p.status === 'solved';
-          const isNowSolved = updates.status === 'solved';
+    const prevProblems = stateRef.current.problems;
+    nextProblems = prevProblems.map((p) => {
+      if (p.id === id) {
+        const wasSolved = p.status === 'solved';
+        const isNowSolved = updates.status === 'solved';
 
-          let solvedAt = p.solvedAt;
-          let revisionDate = p.revisionDate;
-          let revisionCount = p.revisionCount || 0;
+        let solvedAt = p.solvedAt;
+        let revisionDate = p.revisionDate;
+        let revisionCount = p.revisionCount || 0;
 
-          if (!wasSolved && isNowSolved) {
-            solvedAt = format(new Date(), 'yyyy-MM-dd');
-            revisionCount = 0;
-            revisionDate = getNextRevisionDate(new Date(), 0);
-            xpReward = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
-                       p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
-          } else if (wasSolved && !isNowSolved) {
-            const deduct = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
-                           p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
-            xpReward = -deduct;
-            solvedAt = null;
-            revisionDate = null;
-            revisionCount = 0;
-          }
-
-          updatedProblem = { ...p, ...updates, solvedAt, revisionDate, revisionCount, updatedAt: new Date().toISOString() };
-          return updatedProblem;
+        if (!wasSolved && isNowSolved) {
+          solvedAt = format(new Date(), 'yyyy-MM-dd');
+          revisionCount = 0;
+          revisionDate = getNextRevisionDate(new Date(), 0);
+          xpReward = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                     p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+        } else if (wasSolved && !isNowSolved) {
+          const deduct = p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                         p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+          xpReward = -deduct;
+          solvedAt = null;
+          revisionDate = null;
+          revisionCount = 0;
         }
-        return p;
-      });
-      return nextProblems;
+
+        updatedProblem = { ...p, ...updates, solvedAt, revisionDate, revisionCount, updatedAt: new Date().toISOString() };
+        return updatedProblem;
+      }
+      return p;
     });
 
-    // Update local storage
+    stateRef.current.problems = nextProblems;
+    setProblems(nextProblems);
+
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
@@ -563,11 +649,13 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({ problems: nextProblems, ...(xpReward !== 0 ? { xp: Math.max(0, xp + xpReward) } : {}) });
+    await syncUserToFirestore({ problems: nextProblems, ...(xpReward !== 0 ? { xp: Math.max(0, stateRef.current.xp + xpReward) } : {}) });
+    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
   };
 
   const deleteProblem = async (id) => {
-    const nextProblems = problems.filter((p) => p.id !== id);
+    const nextProblems = stateRef.current.problems.filter((p) => p.id !== id);
+    stateRef.current.problems = nextProblems;
     setProblems(nextProblems);
 
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
@@ -581,7 +669,8 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({ problems: nextProblems });
+    await syncUserToFirestore({ problems: nextProblems });
+    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
   };
 
   const completeRevision = async (id) => {
@@ -589,21 +678,23 @@ export function DataProvider({ children }) {
     let nextCount = 0;
     let nextProblems = [];
 
-    setProblems((prev) => {
-      nextProblems = prev.map((p) => {
-        if (p.id === id) {
-          nextCount = (p.revisionCount || 0) + 1;
-          updatedDate = getNextRevisionDate(new Date(), nextCount);
-          return {
-            ...p,
-            revisionCount: nextCount,
-            revisionDate: updatedDate,
-          };
-        }
-        return p;
-      });
-      return nextProblems;
+    const prevProblems = stateRef.current.problems;
+    nextProblems = prevProblems.map((p) => {
+      if (p.id === id) {
+        nextCount = (p.revisionCount || 0) + 1;
+        updatedDate = getNextRevisionDate(new Date(), nextCount);
+        return {
+          ...p,
+          revisionCount: nextCount,
+          revisionDate: updatedDate,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return p;
     });
+
+    stateRef.current.problems = nextProblems;
+    setProblems(nextProblems);
 
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
@@ -623,10 +714,10 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({ problems: nextProblems, xp: xp + XP_REWARDS.PROBLEM_REVISION });
+    await syncUserToFirestore({ problems: nextProblems, xp: stateRef.current.xp + XP_REWARDS.PROBLEM_REVISION });
   };
 
-  // Task actions (stored under /users/{uid}/tasks/{taskId})
+  // Task actions (stored under /users/{uid}/tasks/{taskId} and parent doc)
   const addTask = async (taskData) => {
     const newTask = {
       id: `task-${Date.now()}`,
@@ -635,7 +726,8 @@ export function DataProvider({ children }) {
       createdAt: format(new Date(), 'yyyy-MM-dd'),
     };
 
-    const nextTasks = [newTask, ...tasks];
+    const nextTasks = [newTask, ...stateRef.current.tasks];
+    stateRef.current.tasks = nextTasks;
     setTasks(nextTasks);
 
     const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
@@ -649,7 +741,8 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({ tasks: nextTasks });
+    await syncUserToFirestore({ tasks: nextTasks });
+    checkAchievements(stateRef.current.problems, nextTasks, calculateStreak());
   };
 
   const toggleTask = async (id) => {
@@ -657,26 +750,27 @@ export function DataProvider({ children }) {
     let wasDone = false;
     let nextTasks = [];
 
-    setTasks((prev) => {
-      nextTasks = prev.map((t) => {
-        if (t.id === id) {
-          wasDone = t.status === 'done';
-          const nextStatus = wasDone ? 'pending' : 'done';
-          updatedTask = {
-            ...t,
-            status: nextStatus,
-            completedAt: nextStatus === 'done' ? format(new Date(), 'yyyy-MM-dd') : null,
-          };
-          return updatedTask;
-        }
-        return t;
-      });
-      return nextTasks;
+    const prevTasks = stateRef.current.tasks;
+    nextTasks = prevTasks.map((t) => {
+      if (t.id === id) {
+        wasDone = t.status === 'done';
+        const nextStatus = wasDone ? 'pending' : 'done';
+        updatedTask = {
+          ...t,
+          status: nextStatus,
+          completedAt: nextStatus === 'done' ? format(new Date(), 'yyyy-MM-dd') : null,
+          updatedAt: new Date().toISOString(),
+        };
+        return updatedTask;
+      }
+      return t;
     });
 
     if (!updatedTask) return;
 
-    // Immediately cache updated tasks to localStorage
+    stateRef.current.tasks = nextTasks;
+    setTasks(nextTasks);
+
     const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
     localStorage.setItem(userTasksKey, JSON.stringify(nextTasks));
 
@@ -684,11 +778,9 @@ export function DataProvider({ children }) {
     const completionDate = (wasDone && updatedTask.completedAt) ? updatedTask.completedAt : todayStr;
 
     if (!wasDone) {
-      // Task was marked COMPLETED -> add XP and record daily activity
       addXp(XP_REWARDS.TASK_COMPLETE, 'Daily Task Completed');
       recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr);
     } else {
-      // Task was UNCHECKED -> subtract XP and decrement daily activity
       addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Unchecked');
       recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate);
     }
@@ -702,23 +794,23 @@ export function DataProvider({ children }) {
     }
 
     const currentStreak = calculateStreak();
-    checkAchievements(problems, nextTasks, currentStreak);
-    syncUserToFirestore({
+    checkAchievements(stateRef.current.problems, nextTasks, currentStreak);
+    await syncUserToFirestore({
       tasks: nextTasks,
       streak: currentStreak,
-      xp: Math.max(0, xp + (!wasDone ? XP_REWARDS.TASK_COMPLETE : -XP_REWARDS.TASK_COMPLETE)),
+      xp: Math.max(0, stateRef.current.xp + (!wasDone ? XP_REWARDS.TASK_COMPLETE : -XP_REWARDS.TASK_COMPLETE)),
     });
   };
 
   const deleteTask = async (id) => {
-    const taskToDelete = tasks.find((t) => t.id === id);
-    const nextTasks = tasks.filter((t) => t.id !== id);
+    const taskToDelete = stateRef.current.tasks.find((t) => t.id === id);
+    const nextTasks = stateRef.current.tasks.filter((t) => t.id !== id);
+    stateRef.current.tasks = nextTasks;
     setTasks(nextTasks);
 
     const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
     localStorage.setItem(userTasksKey, JSON.stringify(nextTasks));
 
-    // If deleting a completed task, revert its daily activity and XP
     if (taskToDelete && taskToDelete.status === 'done') {
       const todayStr = format(new Date(), 'yyyy-MM-dd');
       const targetDate = taskToDelete.completedAt || todayStr;
@@ -734,17 +826,71 @@ export function DataProvider({ children }) {
       }
     }
 
-    syncUserToFirestore({
+    await syncUserToFirestore({
       tasks: nextTasks,
-      ...(taskToDelete && taskToDelete.status === 'done' ? { xp: Math.max(0, xp - XP_REWARDS.TASK_COMPLETE) } : {})
+      ...(taskToDelete && taskToDelete.status === 'done' ? { xp: Math.max(0, stateRef.current.xp - XP_REWARDS.TASK_COMPLETE) } : {})
     });
   };
 
-  // Purge all legacy demo items (prob-1..5, task-1..4) from state and Firestore
-  const purgeDemoData = async () => {
-    const cleanProbs = problems.filter((p) => !DEMO_PROBLEM_IDS.includes(p.id));
-    const cleanTasks = tasks.filter((t) => !DEMO_TASK_IDS.includes(t.id));
+  // Atomic import of LeetCode profile, statistics, and XP
+  const importLeetCodeProfile = async (stats, earnedXp = 0) => {
+    if (!stats) return;
 
+    const updatedProfile = {
+      ...stateRef.current.userProfile,
+      leetcodeUsername: stats.username,
+      leetcodeStats: {
+        totalSolved: stats.totalSolved,
+        easySolved: stats.easySolved,
+        mediumSolved: stats.mediumSolved,
+        hardSolved: stats.hardSolved,
+        ranking: stats.ranking,
+        reputation: stats.reputation,
+        avatar: stats.avatar,
+      },
+    };
+
+    const nextXp = (stateRef.current.xp || 0) + (earnedXp || 0);
+
+    stateRef.current.userProfile = updatedProfile;
+    stateRef.current.xp = nextXp;
+
+    setUserProfile(updatedProfile);
+    setXp(nextXp);
+
+    const profileKey = getStorageKey(currentUid, isDemoMode, 'user_profile');
+    const xpKey = getStorageKey(currentUid, isDemoMode, 'xp');
+    localStorage.setItem(profileKey, JSON.stringify(updatedProfile));
+    localStorage.setItem(xpKey, String(nextXp));
+
+    if (earnedXp > 0) {
+      if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
+      setActiveXpReward({
+        id: Date.now(),
+        amount: earnedXp,
+        reason: `LeetCode Sync: @${stats.username} (${stats.totalSolved} Solved)`,
+      });
+      xpTimerRef.current = setTimeout(() => {
+        setActiveXpReward(null);
+      }, 2400);
+    }
+
+    if (currentUser && !isDemoMode) {
+      await syncUserToFirestore({
+        userProfile: updatedProfile,
+        profile: updatedProfile,
+        xp: nextXp,
+      });
+    }
+  };
+
+  // Purge all legacy demo items from state and Firestore
+  const purgeDemoData = async () => {
+    const cleanProbs = stateRef.current.problems.filter((p) => !DEMO_PROBLEM_IDS.includes(p.id));
+    const cleanTasks = stateRef.current.tasks.filter((t) => !DEMO_TASK_IDS.includes(t.id));
+
+    stateRef.current.problems = cleanProbs;
+    stateRef.current.tasks = cleanTasks;
     setProblems(cleanProbs);
     setTasks(cleanTasks);
 
@@ -781,8 +927,18 @@ export function DataProvider({ children }) {
 
   // Clear/Reset all data for current user to a fresh zero slate
   const clearUserData = async () => {
-    const prevProblems = [...problems];
-    const prevTasks = [...tasks];
+    const prevProblems = [...stateRef.current.problems];
+    const prevTasks = [...stateRef.current.tasks];
+
+    stateRef.current = {
+      ...stateRef.current,
+      problems: [],
+      tasks: [],
+      dailyLogs: {},
+      xp: 0,
+      unlockedAchievements: [],
+      roadmapProgress: {},
+    };
 
     setProblems([]);
     setTasks([]);
@@ -841,14 +997,44 @@ export function DataProvider({ children }) {
     const newProblems = Array.isArray(backupData.problems) ? backupData.problems : [];
     const newTasks = Array.isArray(backupData.tasks) ? backupData.tasks : [];
     const newXp = typeof backupData.xp === 'number' ? backupData.xp : 0;
-    const newLogs = backupData.dailyLogs && typeof backupData.dailyLogs === 'object' ? backupData.dailyLogs : dailyLogs;
-    const newAch = Array.isArray(backupData.unlockedAchievements) ? backupData.unlockedAchievements : unlockedAchievements;
+    const newLogs = backupData.dailyLogs && typeof backupData.dailyLogs === 'object' ? backupData.dailyLogs : stateRef.current.dailyLogs;
+    const newAch = Array.isArray(backupData.unlockedAchievements) ? backupData.unlockedAchievements : stateRef.current.unlockedAchievements;
+    const newProfile = backupData.userProfile && typeof backupData.userProfile === 'object' ? backupData.userProfile : stateRef.current.userProfile;
+    const newRoadmap = backupData.roadmapProgress && typeof backupData.roadmapProgress === 'object' ? backupData.roadmapProgress : stateRef.current.roadmapProgress;
+
+    stateRef.current = {
+      problems: newProblems,
+      tasks: newTasks,
+      xp: newXp,
+      dailyLogs: newLogs,
+      unlockedAchievements: newAch,
+      userProfile: newProfile,
+      roadmapProgress: newRoadmap,
+    };
 
     setProblems(newProblems);
     setTasks(newTasks);
     setXp(newXp);
     setDailyLogs(newLogs);
     setUnlockedAchievements(newAch);
+    setUserProfile(newProfile);
+    setRoadmapProgress(newRoadmap);
+
+    const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+    const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
+    const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
+    const userXpKey = getStorageKey(currentUid, isDemoMode, 'xp');
+    const userAchKey = getStorageKey(currentUid, isDemoMode, 'achievements');
+    const userRoadmapKey = getStorageKey(currentUid, isDemoMode, 'roadmap_progress');
+    const userProfileKey = getStorageKey(currentUid, isDemoMode, 'user_profile');
+
+    localStorage.setItem(userProbsKey, JSON.stringify(newProblems));
+    localStorage.setItem(userTasksKey, JSON.stringify(newTasks));
+    localStorage.setItem(userLogsKey, JSON.stringify(newLogs));
+    localStorage.setItem(userXpKey, String(newXp));
+    localStorage.setItem(userAchKey, JSON.stringify(newAch));
+    localStorage.setItem(userRoadmapKey, JSON.stringify(newRoadmap));
+    localStorage.setItem(userProfileKey, JSON.stringify(newProfile));
 
     if (currentUser && !isDemoMode) {
       for (const p of problems) {
@@ -868,12 +1054,14 @@ export function DataProvider({ children }) {
       for (const t of newTasks) {
         await setDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id), t);
       }
-      syncUserToFirestore({
+      await syncUserToFirestore({
         problems: newProblems,
         tasks: newTasks,
         dailyLogs: newLogs,
         xp: newXp,
         unlockedAchievements: newAch,
+        userProfile: newProfile,
+        roadmapProgress: newRoadmap,
       });
     }
   };
@@ -881,32 +1069,34 @@ export function DataProvider({ children }) {
   // Save Roadmap module progress scoped strictly to the current user
   const saveRoadmapProgress = async (roadmapId, completedKeys) => {
     const updated = {
-      ...roadmapProgress,
+      ...stateRef.current.roadmapProgress,
       [roadmapId]: completedKeys,
     };
+    stateRef.current.roadmapProgress = updated;
     setRoadmapProgress(updated);
 
     const roadmapKey = getStorageKey(currentUid, isDemoMode, 'roadmap_progress');
     localStorage.setItem(roadmapKey, JSON.stringify(updated));
 
     if (currentUser && !isDemoMode) {
-      syncUserToFirestore({ roadmapProgress: updated });
+      await syncUserToFirestore({ roadmapProgress: updated });
     }
   };
 
   // Save profile information scoped to the current user
   const saveUserProfile = async (profileUpdates) => {
     const updated = {
-      ...userProfile,
+      ...stateRef.current.userProfile,
       ...profileUpdates,
     };
+    stateRef.current.userProfile = updated;
     setUserProfile(updated);
 
     const profileKey = getStorageKey(currentUid, isDemoMode, 'user_profile');
     localStorage.setItem(profileKey, JSON.stringify(updated));
 
     if (currentUser && !isDemoMode) {
-      syncUserToFirestore({ userProfile: updated });
+      await syncUserToFirestore({ userProfile: updated });
     }
   };
 
@@ -937,6 +1127,7 @@ export function DataProvider({ children }) {
     calculateStreak,
     saveRoadmapProgress,
     saveUserProfile,
+    importLeetCodeProfile,
     loadStarterData,
     purgeDemoData,
     clearUserData,

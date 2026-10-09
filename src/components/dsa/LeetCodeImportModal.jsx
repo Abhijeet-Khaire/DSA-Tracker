@@ -10,7 +10,7 @@ import { Search, CheckCircle2, Download, ExternalLink, X, Globe, Sparkles } from
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../../animations/motionConfig';
 
 export default function LeetCodeImportModal({ isOpen, onClose }) {
-  const { addXp, userProfile, saveUserProfile } = useData();
+  const { importLeetCodeProfile, addXp, userProfile, saveUserProfile } = useData();
   const prefersReduced = isReducedMotionPreferred();
 
   const [inputVal, setInputVal] = useState('');
@@ -62,31 +62,32 @@ export default function LeetCodeImportModal({ isOpen, onClose }) {
     ? Math.max(50, (stats.easySolved * 15) + (stats.mediumSolved * 30) + (stats.hardSolved * 60))
     : 50;
 
-  const handleImportProfileAndXp = () => {
+  const handleImportProfileAndXp = async () => {
     if (!stats) return;
 
-    // 1. Save linked LeetCode username and stats into user profile
-    if (saveUserProfile) {
-      saveUserProfile({
-        leetcodeUsername: stats.username,
-        leetcodeStats: {
-          totalSolved: stats.totalSolved,
-          easySolved: stats.easySolved,
-          mediumSolved: stats.mediumSolved,
-          hardSolved: stats.hardSolved,
-          ranking: stats.ranking,
-          reputation: stats.reputation,
-          avatar: stats.avatar,
-        },
-      });
+    if (importLeetCodeProfile) {
+      await importLeetCodeProfile(stats, earnedXp);
+    } else {
+      if (saveUserProfile) {
+        await saveUserProfile({
+          leetcodeUsername: stats.username,
+          leetcodeStats: {
+            totalSolved: stats.totalSolved,
+            easySolved: stats.easySolved,
+            mediumSolved: stats.mediumSolved,
+            hardSolved: stats.hardSolved,
+            ranking: stats.ranking,
+            reputation: stats.reputation,
+            avatar: stats.avatar,
+          },
+        });
+      }
+      addXp(earnedXp, `LeetCode Sync: @${stats.username} (${stats.totalSolved} Solved)`);
     }
-
-    // 2. Award earned XP based on LeetCode solves
-    addXp(earnedXp, `LeetCode Sync: @${stats.username} (${stats.totalSolved} Solved)`);
 
     setImported(true);
 
-    // 3. Automatically close modal after brief confirmation feedback
+    // Automatically close modal after brief confirmation feedback
     closeTimerRef.current = setTimeout(() => {
       onClose();
     }, 750);
