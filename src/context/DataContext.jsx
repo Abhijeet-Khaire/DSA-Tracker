@@ -416,26 +416,135 @@ export function DataProvider({ children }) {
     }
   }, [problems, tasks, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile, isDemoMode]);
 
-  // Calculate streak from daily logs
+  // Calculate streak from daily logs, solved problems, completed tasks, and LeetCode calendar
   const calculateStreak = () => {
     let streak = 0;
     const today = new Date();
-    const currLogs = stateRef.current.dailyLogs || dailyLogs;
+    const currLogs = stateRef.current.dailyLogs || dailyLogs || {};
+    const currProblems = stateRef.current.problems || problems || [];
+    const currTasks = stateRef.current.tasks || tasks || [];
+    const currProfile = stateRef.current.userProfile || userProfile;
+
+    // 1. Gather all active dates from solved problems
+    const activeDates = new Set();
+    currProblems.forEach((p) => {
+      if (p.status === 'solved') {
+        if (p.solvedAt) activeDates.add(p.solvedAt);
+        else if (p.createdAt) activeDates.add(p.createdAt.split('T')[0]);
+      }
+    });
+
+    // 2. Gather active dates from completed tasks
+    currTasks.forEach((t) => {
+      if (t.status === 'done') {
+        if (t.completedAt) activeDates.add(t.completedAt);
+        else if (t.updatedAt) activeDates.add(t.updatedAt.split('T')[0]);
+        else if (t.createdAt) activeDates.add(t.createdAt.split('T')[0]);
+      }
+    });
+
+    // 3. Gather active dates from dailyLogs
+    Object.entries(currLogs).forEach(([dateStr, log]) => {
+      if (log && (log.activeDay || (log.problemsSolved || 0) > 0 || (log.tasksCompleted || 0) > 0 || (log.xpEarned || 0) > 0)) {
+        activeDates.add(dateStr);
+      }
+    });
+
+    // 4. Gather active dates from LeetCode submission calendar if present
+    if (currProfile?.leetcodeStats?.submissionCalendar) {
+      try {
+        let cal = currProfile.leetcodeStats.submissionCalendar;
+        if (typeof cal === 'string') cal = JSON.parse(cal);
+        if (cal && typeof cal === 'object') {
+          Object.entries(cal).forEach(([ts, count]) => {
+            if (Number(count) > 0) {
+              const dateStr = format(new Date(parseInt(ts, 10) * 1000), 'yyyy-MM-dd');
+              activeDates.add(dateStr);
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 5. Calculate consecutive day streak leading up to today
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const dateStr = format(d, 'yyyy-MM-dd');
-      const log = currLogs[dateStr];
 
-      if (log && log.activeDay && (log.problemsSolved > 0 || log.tasksCompleted > 0)) {
+      if (activeDates.has(dateStr)) {
         streak++;
       } else if (i === 0) {
+        // Today hasn't been completed yet: don't break, allow streak to continue from yesterday
         continue;
       } else {
         break;
       }
     }
+
     return streak;
+  };
+
+  // Recalculates streak from problems, tasks, logs, and repairs any broken log dates
+  const recalculateAndRepairStreak = async () => {
+    const currLogs = { ...(stateRef.current.dailyLogs || {}) };
+    const currProbs = stateRef.current.problems || [];
+    const currTasks = stateRef.current.tasks || [];
+
+    let hasRepaired = false;
+
+    // Repair missing dailyLog entries for solved problems
+    currProbs.forEach((p) => {
+      if (p.status === 'solved') {
+        const dateStr = p.solvedAt || (p.createdAt ? p.createdAt.split('T')[0] : null);
+        if (dateStr) {
+          if (!currLogs[dateStr] || !currLogs[dateStr].activeDay) {
+            hasRepaired = true;
+            currLogs[dateStr] = {
+              ...(currLogs[dateStr] || {}),
+              problemsSolved: Math.max((currLogs[dateStr]?.problemsSolved || 0), 1),
+              activeDay: true,
+            };
+          }
+        }
+      }
+    });
+
+    // Repair missing dailyLog entries for completed tasks
+    currTasks.forEach((t) => {
+      if (t.status === 'done') {
+        const dateStr = t.completedAt || (t.updatedAt ? t.updatedAt.split('T')[0] : (t.createdAt ? t.createdAt.split('T')[0] : null));
+        if (dateStr) {
+          if (!currLogs[dateStr] || !currLogs[dateStr].activeDay) {
+            hasRepaired = true;
+            currLogs[dateStr] = {
+              ...(currLogs[dateStr] || {}),
+              tasksCompleted: Math.max((currLogs[dateStr]?.tasksCompleted || 0), 1),
+              activeDay: true,
+            };
+          }
+        }
+      }
+    });
+
+    if (hasRepaired) {
+      stateRef.current.dailyLogs = currLogs;
+      setDailyLogs(currLogs);
+      const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
+      localStorage.setItem(userLogsKey, JSON.stringify(currLogs));
+    }
+
+    const currentStreak = calculateStreak();
+    checkAchievements(currProbs, currTasks, currentStreak);
+
+    if (currentUser && !isDemoMode) {
+      await syncUserToFirestore({
+        dailyLogs: currLogs,
+        streak: currentStreak,
+      });
+    }
+
+    return currentStreak;
   };
 
   // Central helper to persist the complete user document hierarchy in Firestore:
@@ -619,13 +728,13 @@ export function DataProvider({ children }) {
   // Log today's activity with Firestore persistence
   const recordDailyActivity = async (type, amount = 1, xpEarned = 0, specificDate = null) => {
     const targetDate = specificDate || format(new Date(), 'yyyy-MM-dd');
-    const currLogs = stateRef.current.dailyLogs;
+    const currLogs = stateRef.current.dailyLogs || {};
     const current = currLogs[targetDate] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
     
     const nextProblemsSolved = Math.max(0, (current.problemsSolved || 0) + (type === 'problem' ? amount : 0));
     const nextTasksCompleted = Math.max(0, (current.tasksCompleted || 0) + (type === 'task' ? amount : 0));
     const nextXpEarned = Math.max(0, (current.xpEarned || 0) + xpEarned);
-    const isActiveDay = nextProblemsSolved > 0 || nextTasksCompleted > 0;
+    const isActiveDay = nextProblemsSolved > 0 || nextTasksCompleted > 0 || nextXpEarned > 0;
 
     const nextLogs = {
       ...currLogs,
@@ -647,6 +756,8 @@ export function DataProvider({ children }) {
     if (currentUser && !isDemoMode) {
       await syncUserToFirestore({ dailyLogs: nextLogs });
     }
+
+    return nextLogs;
   };
 
   // Problem actions (stored under /users/{uid}/problems/{probId} and parent doc)
@@ -673,7 +784,7 @@ export function DataProvider({ children }) {
       addedXp = newProb.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
                 newProb.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
       addXp(addedXp, `${newProb.difficulty} Problem Solved`);
-      recordDailyActivity('problem', 1, addedXp);
+      await recordDailyActivity('problem', 1, addedXp);
     }
 
     if (currentUser && !isDemoMode) {
@@ -733,10 +844,10 @@ export function DataProvider({ children }) {
 
     if (xpReward > 0) {
       addXp(xpReward, 'Problem Status Solved');
-      recordDailyActivity('problem', 1, xpReward);
+      await recordDailyActivity('problem', 1, xpReward);
     } else if (xpReward < 0) {
       addXp(xpReward, 'Problem Status Reverted');
-      recordDailyActivity('problem', -1, xpReward);
+      await recordDailyActivity('problem', -1, xpReward);
     }
 
     if (currentUser && !isDemoMode && updatedProblem) {
@@ -798,7 +909,7 @@ export function DataProvider({ children }) {
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
     addXp(XP_REWARDS.PROBLEM_REVISION, 'Spaced Revision Completed');
-    recordDailyActivity('problem', 0, XP_REWARDS.PROBLEM_REVISION);
+    await recordDailyActivity('problem', 1, XP_REWARDS.PROBLEM_REVISION);
 
     if (currentUser && !isDemoMode) {
       try {
@@ -877,10 +988,10 @@ export function DataProvider({ children }) {
 
     if (!wasDone) {
       addXp(XP_REWARDS.TASK_COMPLETE, 'Daily Task Completed');
-      recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr);
+      await recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr);
     } else {
       addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Unchecked');
-      recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate);
+      await recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate);
     }
 
     if (currentUser && !isDemoMode) {
@@ -1036,6 +1147,77 @@ export function DataProvider({ children }) {
   const importLeetCodeProfile = async (stats, earnedXp = 0) => {
     if (!stats) return;
 
+    // Parse submission calendar to populate dailyLogs with historic LeetCode activity
+    const nextLogs = { ...(stateRef.current.dailyLogs || {}) };
+    let cal = stats.submissionCalendar;
+    if (typeof cal === 'string') {
+      try { cal = JSON.parse(cal); } catch (_) { cal = {}; }
+    }
+
+    if (cal && typeof cal === 'object') {
+      Object.entries(cal).forEach(([ts, count]) => {
+        const numCount = Number(count);
+        if (numCount > 0) {
+          const dateStr = format(new Date(parseInt(ts, 10) * 1000), 'yyyy-MM-dd');
+          const existing = nextLogs[dateStr] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
+          nextLogs[dateStr] = {
+            ...existing,
+            problemsSolved: Math.max(existing.problemsSolved || 0, numCount),
+            activeDay: true,
+          };
+        }
+      });
+    }
+
+    // Also populate recent submissions into dailyLogs and problems
+    const existingTitles = new Set((stateRef.current.problems || []).map((p) => p.title?.toLowerCase()));
+    const newProbsFromSubmissions = [];
+
+    if (Array.isArray(stats.recentSubmissions)) {
+      stats.recentSubmissions.forEach((sub, sIdx) => {
+        if (sub.timestamp) {
+          const dateStr = format(new Date(parseInt(sub.timestamp, 10) * 1000), 'yyyy-MM-dd');
+          const existing = nextLogs[dateStr] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
+          nextLogs[dateStr] = {
+            ...existing,
+            problemsSolved: Math.max(existing.problemsSolved || 0, 1),
+            activeDay: true,
+          };
+
+          if (sub.title && !existingTitles.has(sub.title.toLowerCase()) && (sub.statusDisplay === 'Accepted' || !sub.statusDisplay)) {
+            existingTitles.add(sub.title.toLowerCase());
+            newProbsFromSubmissions.push({
+              id: `prob-lc-${Date.now()}-${sIdx}`,
+              title: sub.title,
+              platform: 'LeetCode',
+              url: sub.titleSlug ? `https://leetcode.com/problems/${sub.titleSlug}/` : 'https://leetcode.com',
+              difficulty: 'Medium',
+              topics: ['LeetCode Import'],
+              status: 'solved',
+              solvedAt: dateStr,
+              revisionCount: 0,
+              revisionDate: getNextRevisionDate(new Date(dateStr), 0),
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      });
+    }
+
+    let finalProblems = stateRef.current.problems || [];
+    if (newProbsFromSubmissions.length > 0) {
+      finalProblems = [...newProbsFromSubmissions, ...finalProblems];
+      stateRef.current.problems = finalProblems;
+      setProblems(finalProblems);
+      const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+      localStorage.setItem(userProbsKey, JSON.stringify(finalProblems));
+    }
+
+    stateRef.current.dailyLogs = nextLogs;
+    setDailyLogs(nextLogs);
+    const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
+    localStorage.setItem(userLogsKey, JSON.stringify(nextLogs));
+
     const updatedProfile = {
       ...stateRef.current.userProfile,
       leetcodeUsername: stats.username,
@@ -1047,6 +1229,7 @@ export function DataProvider({ children }) {
         ranking: stats.ranking,
         reputation: stats.reputation,
         avatar: stats.avatar,
+        submissionCalendar: stats.submissionCalendar,
       },
     };
 
@@ -1075,11 +1258,17 @@ export function DataProvider({ children }) {
       }, 2400);
     }
 
+    const updatedStreak = calculateStreak();
+    checkAchievements(finalProblems, stateRef.current.tasks, updatedStreak);
+
     if (currentUser && !isDemoMode) {
       await syncUserToFirestore({
         userProfile: updatedProfile,
         profile: updatedProfile,
         xp: nextXp,
+        dailyLogs: nextLogs,
+        problems: finalProblems,
+        streak: updatedStreak,
       });
     }
   };
@@ -1335,6 +1524,8 @@ export function DataProvider({ children }) {
     deleteNote,
     togglePinNote,
     calculateStreak,
+    recordDailyActivity,
+    recalculateAndRepairStreak,
     saveRoadmapProgress,
     saveUserProfile,
     importLeetCodeProfile,

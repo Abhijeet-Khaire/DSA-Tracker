@@ -82,6 +82,8 @@ export default function Settings() {
     clearUserData, 
     importUserData,
     calculateStreak,
+    recalculateAndRepairStreak,
+    recordDailyActivity,
     firestoreSyncStatus,
     firestoreErrorDetails,
     testFirestoreConnection
@@ -91,6 +93,7 @@ export default function Settings() {
 
   // Active Category Tab
   const [activeTab, setActiveTab] = useState('study'); // 'study' | 'account' | 'guides' | 'data' | 'appearance'
+  const [repairingStreak, setRepairingStreak] = useState(false);
 
   // Preferences State
   const [reducedMotion, setReducedMotion] = useState(() => isReducedMotionPreferred());
@@ -360,9 +363,26 @@ service cloud.firestore {
                   <p className="text-xs text-slate-400">Define your daily problem quota and accountability goals</p>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                Active Streak: {streak} {streak === 1 ? 'day' : 'days'}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  Active Streak: {streak} {streak === 1 ? 'day' : 'days'}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setRepairingStreak(true);
+                    if (recalculateAndRepairStreak) {
+                      await recalculateAndRepairStreak();
+                    }
+                    setTimeout(() => setRepairingStreak(false), 500);
+                  }}
+                  className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 hover:border-cyan-500/40 flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="Recalculate streak from problems and tasks"
+                >
+                  <RefreshCw className={`w-3 h-3 ${repairingStreak ? 'animate-spin text-cyan-400' : ''}`} />
+                  <span>Sync Streak</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

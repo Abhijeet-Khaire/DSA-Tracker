@@ -10,13 +10,26 @@ import TopicProgressChart from '../components/dsa/TopicProgressChart';
 import DifficultyChart from '../components/dsa/DifficultyChart';
 import MotionButton from '../components/motion/MotionButton';
 import AnimatedCounter from '../components/motion/AnimatedCounter';
-import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck, Cpu } from 'lucide-react';
+import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck, Cpu, RefreshCw, Globe } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
+import { fetchLeetCodeStats } from '../lib/leetcodeApi';
 
 export default function ProfileResume() {
   const { currentUser } = useAuth();
-  const { problems, tasks, xp, levelInfo, calculateStreak, unlockedAchievements, roadmapProgress, userProfile, saveUserProfile } = useData();
+  const { 
+    problems, 
+    tasks, 
+    xp, 
+    levelInfo, 
+    calculateStreak, 
+    recalculateAndRepairStreak,
+    importLeetCodeProfile,
+    unlockedAchievements, 
+    roadmapProgress, 
+    userProfile, 
+    saveUserProfile 
+  } = useData();
 
   const [copied, setCopied] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -26,6 +39,8 @@ export default function ProfileResume() {
   const [editLeetCode, setEditLeetCode] = useState('');
   const [editGithub, setEditGithub] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [syncingStreak, setSyncingStreak] = useState(false);
+  const [syncingLeetCode, setSyncingLeetCode] = useState(false);
 
   const prefersReduced = isReducedMotionPreferred();
   const navigate = useNavigate();
@@ -50,9 +65,27 @@ export default function ProfileResume() {
     setIsEditModalOpen(true);
   };
 
+  const handleSyncLeetCode = async () => {
+    const username = userProfile?.leetcodeUsername || editLeetCode;
+    if (!username) return;
+    setSyncingLeetCode(true);
+    try {
+      const stats = await fetchLeetCodeStats(username);
+      const earnedXp = Math.max(50, (stats.easySolved * 15) + (stats.mediumSolved * 30) + (stats.hardSolved * 60));
+      if (importLeetCodeProfile) {
+        await importLeetCodeProfile(stats, earnedXp);
+      }
+    } catch (err) {
+      console.error('Failed to sync LeetCode:', err);
+    } finally {
+      setSyncingLeetCode(false);
+    }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setSavingProfile(true);
+
     await saveUserProfile({
       displayName: editName,
       targetRole: editRole,
@@ -60,6 +93,20 @@ export default function ProfileResume() {
       leetcodeUsername: editLeetCode,
       githubUsername: editGithub,
     });
+
+    // If LeetCode username is provided or updated, attempt to sync stats, submissions & streak
+    if (editLeetCode && editLeetCode.trim()) {
+      try {
+        const stats = await fetchLeetCodeStats(editLeetCode.trim());
+        const earnedXp = Math.max(50, (stats.easySolved * 15) + (stats.mediumSolved * 30) + (stats.hardSolved * 60));
+        if (importLeetCodeProfile) {
+          await importLeetCodeProfile(stats, earnedXp);
+        }
+      } catch (err) {
+        console.warn('Non-blocking: could not auto-fetch LeetCode stats during profile save:', err.message);
+      }
+    }
+
     setSavingProfile(false);
     setIsEditModalOpen(false);
   };
@@ -177,13 +224,53 @@ export default function ProfileResume() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* LeetCode Connected Pill */}
+            {userProfile?.leetcodeUsername && (
+              <div className="px-3.5 py-1.5 rounded-2xl bg-slate-950 border border-amber-500/30 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-amber-400" />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-amber-300">@{userProfile.leetcodeUsername}</span>
+                    <button
+                      type="button"
+                      onClick={handleSyncLeetCode}
+                      disabled={syncingLeetCode}
+                      className="p-1 rounded-md hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                      title="Sync LeetCode stats & streak"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${syncingLeetCode ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-medium">
+                    {userProfile.leetcodeStats?.totalSolved !== undefined ? `${userProfile.leetcodeStats.totalSolved} Solved` : 'LeetCode Connected'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-2">
               <StreakFlameDrawable streak={streak} className="w-8 h-8" />
               <div>
-                <span className="text-xs font-extrabold text-amber-400 block leading-tight">
-                  <AnimatedCounter value={streak} suffix=" Days" />
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-extrabold text-amber-400 block leading-tight">
+                    <AnimatedCounter value={streak} suffix=" Days" />
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setSyncingStreak(true);
+                      if (recalculateAndRepairStreak) {
+                        await recalculateAndRepairStreak();
+                      }
+                      setTimeout(() => setSyncingStreak(false), 500);
+                    }}
+                    className="p-1 rounded-md hover:bg-slate-800 text-slate-500 hover:text-cyan-400 transition-colors cursor-pointer"
+                    title="Recalculate and repair streak"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${syncingStreak ? 'animate-spin text-cyan-400' : ''}`} />
+                  </button>
+                </div>
                 <span className="text-[9px] text-slate-400 font-bold uppercase">Active Streak</span>
               </div>
             </div>

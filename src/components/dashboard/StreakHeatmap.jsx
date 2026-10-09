@@ -36,7 +36,7 @@ const FILTER_TYPES = [
 ];
 
 export default function StreakHeatmap() {
-  const { dailyLogs, calculateStreak, xp } = useData();
+  const { dailyLogs, calculateStreak, xp, problems = [], tasks = [] } = useData();
   const streak = calculateStreak();
   const prefersReduced = isReducedMotionPreferred();
 
@@ -47,15 +47,26 @@ export default function StreakHeatmap() {
 
   const today = useMemo(() => new Date(), []);
 
-  // Compute Longest Historical Streak from dailyLogs
+  // Compute Longest Historical Streak from dailyLogs, problems, and tasks
   const longestStreak = useMemo(() => {
     let max = 0;
     let curr = 0;
+
+    const problemDates = new Set(
+      problems.filter((p) => p.status === 'solved').map((p) => p.solvedAt || (p.createdAt ? p.createdAt.split('T')[0] : null)).filter(Boolean)
+    );
+    const taskDates = new Set(
+      tasks.filter((t) => t.status === 'done').map((t) => t.completedAt || (t.updatedAt ? t.updatedAt.split('T')[0] : (t.createdAt ? t.createdAt.split('T')[0] : null))).filter(Boolean)
+    );
+
     for (let i = 365; i >= 0; i--) {
       const d = subDays(today, i);
       const dateStr = format(d, 'yyyy-MM-dd');
       const log = dailyLogs[dateStr];
-      if (log && log.activeDay && (log.problemsSolved > 0 || log.tasksCompleted > 0)) {
+      const isDayActive = (log && (log.activeDay || log.problemsSolved > 0 || log.tasksCompleted > 0 || log.xpEarned > 0)) ||
+                          problemDates.has(dateStr) || taskDates.has(dateStr);
+
+      if (isDayActive) {
         curr++;
         if (curr > max) max = curr;
       } else {
@@ -63,7 +74,7 @@ export default function StreakHeatmap() {
       }
     }
     return Math.max(max, streak);
-  }, [dailyLogs, streak, today]);
+  }, [dailyLogs, streak, today, problems, tasks]);
 
   // Generate calendar columns & weeks aligned by Sunday-Saturday
   const { weeks, monthHeaders, totalActive, totalSolved, totalTasks, consistencyRate } = useMemo(() => {
@@ -91,15 +102,20 @@ export default function StreakHeatmap() {
       const isBeforeSelected = iter < startDate;
 
       const log = dailyLogs[dateStr] || { problemsSolved: 0, tasksCompleted: 0, activeDay: false };
+      const solvedInProblems = problems.filter((p) => p.status === 'solved' && (p.solvedAt === dateStr || (p.createdAt && p.createdAt.startsWith(dateStr)))).length;
+      const tasksInTasks = tasks.filter((t) => t.status === 'done' && (t.completedAt === dateStr || (t.updatedAt && t.updatedAt.startsWith(dateStr)))).length;
+
+      const effectiveProblems = Math.max(log.problemsSolved || 0, solvedInProblems);
+      const effectiveTasks = Math.max(log.tasksCompleted || 0, tasksInTasks);
       
       // Calculate activity score depending on active filter
       let score = 0;
       if (activeFilter === 'problems') {
-        score = log.problemsSolved * 2;
+        score = effectiveProblems * 2;
       } else if (activeFilter === 'tasks') {
-        score = log.tasksCompleted * 2;
+        score = effectiveTasks * 2;
       } else {
-        score = (log.problemsSolved * 2) + log.tasksCompleted;
+        score = (effectiveProblems * 2) + effectiveTasks + (log.xpEarned ? 1 : 0);
       }
 
       let intensity = 0;

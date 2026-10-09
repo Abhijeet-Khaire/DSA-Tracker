@@ -24,7 +24,7 @@ import {
 import { isReducedMotionPreferred, SPRING_SMOOTH, SPRING_TACTILE } from '../../animations/motionConfig';
 
 export default function RoadmapTracker() {
-  const { problems, addProblem, addTask, addXp, roadmapProgress, saveRoadmapProgress } = useData();
+  const { problems, addProblem, addTask, addXp, roadmapProgress, saveRoadmapProgress, recordDailyActivity } = useData();
   const { currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const prefersReduced = isReducedMotionPreferred();
@@ -65,6 +65,9 @@ export default function RoadmapTracker() {
     } else {
       next = [...completedItems, key];
       addXp(50, `Roadmap: ${item.title}`);
+      if (recordDailyActivity) {
+        recordDailyActivity('problem', 1, 50);
+      }
     }
     saveRoadmapProgress(selectedRoadmapId, next);
   };
