@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import DSATracker from './pages/DSATracker';
 import Tasks from './pages/Tasks';
 import Achievements from './pages/Achievements';
+import Notes from './pages/Notes';
 import ProfileResume from './pages/ProfileResume';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
@@ -33,6 +34,7 @@ function AppContent() {
                 <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/dsa" element={<ProtectedRoute><DSATracker /></ProtectedRoute>} />
                 <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+                <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
                 <Route path="/achievements" element={<ProtectedRoute><Achievements /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><ProfileResume /></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

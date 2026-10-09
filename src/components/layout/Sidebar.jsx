@@ -42,6 +42,7 @@ export default function Sidebar() {
       badge: pendingTasksCount > 0 ? pendingTasksCount : null,
       badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
     },
+    { label: 'Notes', path: '/notes', icon: BookOpen },
     { label: 'Achievements', path: '/achievements', icon: Trophy },
     { label: 'DSA Resume', path: '/profile', icon: Award },
     { label: 'Settings', path: '/settings', icon: Settings },

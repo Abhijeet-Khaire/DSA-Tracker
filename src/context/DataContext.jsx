@@ -48,6 +48,9 @@ export function DataProvider({ children }) {
   const [tasks, setTasks] = useState(() => 
     loadScopedStorage('tasks', [])
   );
+  const [notes, setNotes] = useState(() => 
+    loadScopedStorage('notes', [])
+  );
   const [dailyLogs, setDailyLogs] = useState(() => 
     loadScopedStorage('daily_logs', {})
   );
@@ -80,6 +83,7 @@ export function DataProvider({ children }) {
   const stateRef = useRef({
     problems: [],
     tasks: [],
+    notes: [],
     dailyLogs: {},
     xp: 0,
     unlockedAchievements: [],
@@ -97,24 +101,26 @@ export function DataProvider({ children }) {
     stateRef.current = {
       problems,
       tasks,
+      notes,
       dailyLogs,
       xp,
       unlockedAchievements,
       roadmapProgress,
       userProfile,
     };
-  }, [problems, tasks, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile]);
+  }, [problems, tasks, notes, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile]);
 
   // Sync state when active user or demo mode changes
   useEffect(() => {
     // Purge any residual demo keys from localStorage
-    ['problems', 'tasks', 'daily_logs', 'xp', 'achievements', 'roadmap_progress', 'user_profile', 'demo_mode'].forEach((k) => {
+    ['problems', 'tasks', 'notes', 'daily_logs', 'xp', 'achievements', 'roadmap_progress', 'user_profile', 'demo_mode'].forEach((k) => {
       localStorage.removeItem(`grindtrack_demo_${k}`);
     });
 
     if (!currentUid) {
       setProblems([]);
       setTasks([]);
+      setNotes([]);
       setDailyLogs({});
       setXp(0);
       setUnlockedAchievements([]);
@@ -123,6 +129,7 @@ export function DataProvider({ children }) {
       stateRef.current = {
         problems: [],
         tasks: [],
+        notes: [],
         dailyLogs: {},
         xp: 0,
         unlockedAchievements: [],
@@ -141,6 +148,7 @@ export function DataProvider({ children }) {
     setIsLoadingData(true);
     const userProbsKey = getStorageKey(currentUid, false, 'problems');
     const userTasksKey = getStorageKey(currentUid, false, 'tasks');
+    const userNotesKey = getStorageKey(currentUid, false, 'notes');
     const userLogsKey = getStorageKey(currentUid, false, 'daily_logs');
     const userXpKey = getStorageKey(currentUid, false, 'xp');
     const userAchKey = getStorageKey(currentUid, false, 'achievements');
@@ -158,6 +166,10 @@ export function DataProvider({ children }) {
       ? JSON.parse(cachedTasks).filter((t) => !DEMO_TASK_IDS.includes(t.id))
       : [];
     setTasks(cleanCachedTasks);
+
+    const cachedNotes = localStorage.getItem(userNotesKey);
+    const cleanCachedNotes = cachedNotes ? JSON.parse(cachedNotes) : [];
+    setNotes(cleanCachedNotes);
 
     const cachedLogs = localStorage.getItem(userLogsKey);
     const cleanCachedLogs = cachedLogs ? JSON.parse(cachedLogs) : {};
@@ -188,6 +200,7 @@ export function DataProvider({ children }) {
     stateRef.current = {
       problems: cleanCachedProbs,
       tasks: cleanCachedTasks,
+      notes: cleanCachedNotes,
       dailyLogs: cleanCachedLogs,
       xp: cleanCachedXp,
       unlockedAchievements: cleanCachedAch,
@@ -358,11 +371,35 @@ export function DataProvider({ children }) {
       setFirestoreErrorDetails(err.message);
     });
 
+    // 4. Authoritative User Notes Subcollection Sync (/users/{uid}/notes)
+    const noteCollectionRef = collection(userDocRef, 'notes');
+    const noteUnsub = onSnapshot(noteCollectionRef, (snap) => {
+      setFirestoreSyncStatus('synced');
+      setFirestoreErrorDetails(null);
+      const list = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      list.sort((a, b) => {
+        if (b.isPinned !== a.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
+        return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+      });
+      setNotes(list);
+      stateRef.current.notes = list;
+      localStorage.setItem(userNotesKey, JSON.stringify(list));
+    }, (err) => {
+      console.error('Firestore notes snapshot error:', err);
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
+    });
+
     // Cleanup listeners when switching accounts or logging out
     return () => {
       userDocUnsub();
       probUnsub();
       taskUnsub();
+      noteUnsub();
     };
   }, [currentUid, isDemoMode]);
 
@@ -416,6 +453,7 @@ export function DataProvider({ children }) {
     const finalRoadmap = overrides.roadmapProgress !== undefined ? overrides.roadmapProgress : (overrides.roadmap !== undefined ? overrides.roadmap : curr.roadmapProgress);
     const finalProblems = overrides.problems !== undefined ? overrides.problems : curr.problems;
     const finalTasks = overrides.tasks !== undefined ? overrides.tasks : curr.tasks;
+    const finalNotes = overrides.notes !== undefined ? overrides.notes : curr.notes;
     const finalDailyLogs = overrides.dailyLogs !== undefined ? overrides.dailyLogs : curr.dailyLogs;
 
     // Immediately keep stateRef in sync to avoid any race conditions
@@ -427,6 +465,7 @@ export function DataProvider({ children }) {
       roadmapProgress: finalRoadmap,
       problems: finalProblems,
       tasks: finalTasks,
+      notes: finalNotes,
       dailyLogs: finalDailyLogs,
     };
 
@@ -445,9 +484,10 @@ export function DataProvider({ children }) {
         roadmap: finalRoadmap,
       },
 
-      // 2. problems and tasks all information directly visible in database
+      // 2. problems, tasks, and notes all information directly visible in database
       problems: finalProblems,
       tasks: finalTasks,
+      notes: finalNotes,
 
       // 3. Direct top-level fields for maximum visibility in Firestore console
       profile: finalProfile,
@@ -890,6 +930,108 @@ export function DataProvider({ children }) {
     });
   };
 
+  // Note actions (stored under /users/{uid}/notes/{noteId} and parent doc)
+  const addNote = async (noteData) => {
+    const newNote = {
+      id: noteData.id || `note-${Date.now()}`,
+      title: noteData.title || 'Untitled Note',
+      category: noteData.category || 'Patterns',
+      accentColor: noteData.accentColor || 'cyan',
+      tags: Array.isArray(noteData.tags) ? noteData.tags : [],
+      content: noteData.content || '',
+      codeSnippet: noteData.codeSnippet || '',
+      language: noteData.language || 'cpp',
+      isPinned: !!noteData.isPinned,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextNotes = [newNote, ...stateRef.current.notes];
+    nextNotes.sort((a, b) => {
+      if (b.isPinned !== a.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
+      return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+    });
+
+    stateRef.current.notes = nextNotes;
+    setNotes(nextNotes);
+
+    const userNotesKey = getStorageKey(currentUid, isDemoMode, 'notes');
+    localStorage.setItem(userNotesKey, JSON.stringify(nextNotes));
+
+    if (currentUser && !isDemoMode) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid, 'notes', newNote.id), newNote);
+      } catch (err) {
+        console.error('Error saving note to Firestore subcollection:', err);
+      }
+    }
+
+    await syncUserToFirestore({ notes: nextNotes });
+    addXp(15, 'Study Note Authored');
+  };
+
+  const updateNote = async (id, updates) => {
+    let updatedNote = null;
+    const prevNotes = stateRef.current.notes;
+    const nextNotes = prevNotes.map((n) => {
+      if (n.id === id) {
+        updatedNote = {
+          ...n,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
+        return updatedNote;
+      }
+      return n;
+    });
+
+    nextNotes.sort((a, b) => {
+      if (b.isPinned !== a.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
+      return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+    });
+
+    stateRef.current.notes = nextNotes;
+    setNotes(nextNotes);
+
+    const userNotesKey = getStorageKey(currentUid, isDemoMode, 'notes');
+    localStorage.setItem(userNotesKey, JSON.stringify(nextNotes));
+
+    if (currentUser && !isDemoMode && updatedNote) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid, 'notes', id), updatedNote, { merge: true });
+      } catch (err) {
+        console.error('Error updating note in Firestore:', err);
+      }
+    }
+
+    await syncUserToFirestore({ notes: nextNotes });
+  };
+
+  const deleteNote = async (id) => {
+    const nextNotes = stateRef.current.notes.filter((n) => n.id !== id);
+    stateRef.current.notes = nextNotes;
+    setNotes(nextNotes);
+
+    const userNotesKey = getStorageKey(currentUid, isDemoMode, 'notes');
+    localStorage.setItem(userNotesKey, JSON.stringify(nextNotes));
+
+    if (currentUser && !isDemoMode) {
+      try {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'notes', id));
+      } catch (err) {
+        console.error('Error deleting note from Firestore:', err);
+      }
+    }
+
+    await syncUserToFirestore({ notes: nextNotes });
+  };
+
+  const togglePinNote = async (id) => {
+    const target = stateRef.current.notes.find((n) => n.id === id);
+    if (!target) return;
+    await updateNote(id, { isPinned: !target.isPinned });
+  };
+
   // Atomic import of LeetCode profile, statistics, and XP
   const importLeetCodeProfile = async (stats, earnedXp = 0) => {
     if (!stats) return;
@@ -1054,6 +1196,7 @@ export function DataProvider({ children }) {
 
     const newProblems = Array.isArray(backupData.problems) ? backupData.problems : [];
     const newTasks = Array.isArray(backupData.tasks) ? backupData.tasks : [];
+    const newNotes = Array.isArray(backupData.notes) ? backupData.notes : stateRef.current.notes;
     const newXp = typeof backupData.xp === 'number' ? backupData.xp : 0;
     const newLogs = backupData.dailyLogs && typeof backupData.dailyLogs === 'object' ? backupData.dailyLogs : stateRef.current.dailyLogs;
     const newAch = Array.isArray(backupData.unlockedAchievements) ? backupData.unlockedAchievements : stateRef.current.unlockedAchievements;
@@ -1063,6 +1206,7 @@ export function DataProvider({ children }) {
     stateRef.current = {
       problems: newProblems,
       tasks: newTasks,
+      notes: newNotes,
       xp: newXp,
       dailyLogs: newLogs,
       unlockedAchievements: newAch,
@@ -1072,6 +1216,7 @@ export function DataProvider({ children }) {
 
     setProblems(newProblems);
     setTasks(newTasks);
+    setNotes(newNotes);
     setXp(newXp);
     setDailyLogs(newLogs);
     setUnlockedAchievements(newAch);
@@ -1080,6 +1225,7 @@ export function DataProvider({ children }) {
 
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
     const userTasksKey = getStorageKey(currentUid, isDemoMode, 'tasks');
+    const userNotesKey = getStorageKey(currentUid, isDemoMode, 'notes');
     const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
     const userXpKey = getStorageKey(currentUid, isDemoMode, 'xp');
     const userAchKey = getStorageKey(currentUid, isDemoMode, 'achievements');
@@ -1088,6 +1234,7 @@ export function DataProvider({ children }) {
 
     localStorage.setItem(userProbsKey, JSON.stringify(newProblems));
     localStorage.setItem(userTasksKey, JSON.stringify(newTasks));
+    localStorage.setItem(userNotesKey, JSON.stringify(newNotes));
     localStorage.setItem(userLogsKey, JSON.stringify(newLogs));
     localStorage.setItem(userXpKey, String(newXp));
     localStorage.setItem(userAchKey, JSON.stringify(newAch));
@@ -1182,6 +1329,11 @@ export function DataProvider({ children }) {
     addTask,
     toggleTask,
     deleteTask,
+    notes,
+    addNote,
+    updateNote,
+    deleteNote,
+    togglePinNote,
     calculateStreak,
     saveRoadmapProgress,
     saveUserProfile,

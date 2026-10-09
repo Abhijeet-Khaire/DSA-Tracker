@@ -73,6 +73,7 @@ export default function Settings() {
   const { 
     problems, 
     tasks, 
+    notes,
     xp, 
     levelInfo, 
     userProfile, 
@@ -208,6 +209,7 @@ service cloud.firestore {
       xp,
       problems,
       tasks,
+      notes,
       userProfile,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
