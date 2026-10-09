@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import { format, subDays, startOfWeek, addDays, isSameDay, isToday, isFuture, getMonth, getDay } from 'date-fns';
 import { Link } from 'react-router-dom';
@@ -257,38 +257,62 @@ export default function StreakHeatmap() {
         {/* Action Controls: Range Selector + Filter Switcher */}
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
           {/* Time Range Pills */}
-          <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-            {TIME_RANGES.map((rng) => (
-              <button
-                key={rng.id}
-                onClick={() => setSelectedRange(rng.id)}
-                className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-                  selectedRange === rng.id
-                    ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-white shadow-md shadow-cyan-500/25'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {rng.label}
-              </button>
-            ))}
-          </div>
+          <LayoutGroup id="heatmapRangeNav">
+            <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+              {TIME_RANGES.map((rng) => {
+                const isSelected = selectedRange === rng.id;
+                return (
+                  <button
+                    key={rng.id}
+                    onClick={() => setSelectedRange(rng.id)}
+                    className={`relative px-3 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isSelected && (
+                      <motion.div
+                        layoutId={prefersReduced ? undefined : "heatmapRangeActivePill"}
+                        transition={SPRING_SMOOTH}
+                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md shadow-cyan-500/25"
+                      />
+                    )}
+                    <span className="relative z-10">{rng.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
 
           {/* Activity Category Filters */}
-          <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-            {FILTER_TYPES.map((filt) => (
-              <button
-                key={filt.id}
-                onClick={() => setActiveFilter(filt.id)}
-                className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                  activeFilter === filt.id
-                    ? 'bg-slate-800 text-cyan-300 border border-cyan-500/30'
-                    : 'text-slate-400 hover:text-slate-300'
-                }`}
-              >
-                {filt.label}
-              </button>
-            ))}
-          </div>
+          <LayoutGroup id="heatmapFilterNav">
+            <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+              {FILTER_TYPES.map((filt) => {
+                const isActive = activeFilter === filt.id;
+                return (
+                  <button
+                    key={filt.id}
+                    onClick={() => setActiveFilter(filt.id)}
+                    className={`relative px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer ${
+                      isActive
+                        ? 'text-cyan-300'
+                        : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId={prefersReduced ? undefined : "heatmapFilterActivePill"}
+                        transition={SPRING_SMOOTH}
+                        className="absolute inset-0 rounded-lg bg-slate-800 border border-cyan-500/30 shadow-sm"
+                      />
+                    )}
+                    <span className="relative z-10">{filt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
         </div>
       </div>
 
