@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { 
   Highlighter, 
   Bold, 
@@ -6,12 +6,15 @@ import {
   Underline, 
   List, 
   ListOrdered, 
-  Code, 
   Quote, 
   Eraser,
   Heading1,
-  Heading2
+  Heading2,
+  Strikethrough,
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
+import FloatingHighlighterMenu from './FloatingHighlighterMenu';
 
 export const MAC_HIGHLIGHT_COLORS = [
   {
@@ -107,10 +110,21 @@ export default function MacNotesEditor({
   content,
   onChange,
   readOnly = false,
-  placeholder = 'Start typing your note here... Select text and click any color to highlight it just like macOS Notes.',
+  placeholder = 'Start typing your note here... Select text for instant pop-up highlights and formatting.',
 }) {
   const editorRef = useRef(null);
   const lastHtmlRef = useRef('');
+  const [stats, setStats] = useState({ words: 0, chars: 0 });
+
+  // Update statistics
+  const updateStats = () => {
+    if (!editorRef.current) return;
+    const text = editorRef.current.innerText || '';
+    const clean = text.trim();
+    const words = clean ? clean.split(/\s+/).length : 0;
+    const chars = text.length;
+    setStats({ words, chars });
+  };
 
   // Hydrate content when switching notes
   useEffect(() => {
@@ -119,6 +133,7 @@ export default function MacNotesEditor({
     if (editorRef.current.innerHTML !== initialHtml && lastHtmlRef.current !== content) {
       editorRef.current.innerHTML = initialHtml;
       lastHtmlRef.current = initialHtml;
+      updateStats();
     }
   }, [content]);
 
@@ -126,6 +141,7 @@ export default function MacNotesEditor({
     if (!editorRef.current) return;
     const html = editorRef.current.innerHTML;
     lastHtmlRef.current = html;
+    updateStats();
     onChange(html);
   };
 
@@ -142,7 +158,6 @@ export default function MacNotesEditor({
     if (readOnly) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      alert('Please select some text first to highlight it.');
       return;
     }
 
@@ -150,7 +165,6 @@ export default function MacNotesEditor({
 
     // If clearing highlight
     if (colorConfig === null) {
-      // Remove any parent mark enclosing selection
       const parentMark = selection.anchorNode?.parentElement?.closest('mark');
       if (parentMark) {
         const parent = parentMark.parentNode;
@@ -200,104 +214,142 @@ export default function MacNotesEditor({
     }
   };
 
+  const readTimeMin = Math.max(1, Math.ceil(stats.words / 200));
+
   return (
-    <div className="flex flex-col h-full bg-slate-950/40 rounded-2xl border border-slate-800/80 overflow-hidden shadow-inner">
+    <div className="flex flex-col h-full bg-slate-950/60 rounded-2xl border border-slate-800/80 overflow-hidden shadow-inner relative group/editor">
+      {/* Floating Selection Highlighter Pop-up Toolbar */}
+      {!readOnly && (
+        <FloatingHighlighterMenu
+          editorRef={editorRef}
+          onApplyHighlight={applyColorHighlight}
+          onApplyFormat={executeCommand}
+        />
+      )}
+
       {/* macOS Notes Toolbar */}
       {!readOnly && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-900/90 border-b border-slate-800 text-slate-300 text-xs shrink-0 select-none backdrop-blur-md">
-          {/* Text Style / Formatting Group */}
-          <div className="flex items-center gap-1">
+          {/* Left: macOS Window Traffic Lights + Formatting Group */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 mr-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 border border-rose-600/40" title="Close" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-600/40" title="Minimize" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-600/40" title="Expand" />
+            </div>
+
+            <div className="w-px h-4 bg-slate-800 mx-1" />
+
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('formatBlock', '<h1>')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Heading 1"
             >
-              <Heading1 className="w-4 h-4" />
+              <Heading1 className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('formatBlock', '<h2>')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Heading 2"
             >
-              <Heading2 className="w-4 h-4" />
+              <Heading2 className="w-3.5 h-3.5" />
             </button>
 
             <div className="w-px h-4 bg-slate-800 mx-1" />
 
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('bold')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Bold (⌘B)"
             >
-              <Bold className="w-4 h-4" />
+              <Bold className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('italic')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Italic (⌘I)"
             >
-              <Italic className="w-4 h-4" />
+              <Italic className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('underline')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Underline (⌘U)"
             >
-              <Underline className="w-4 h-4" />
+              <Underline className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => executeCommand('strikeThrough')}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+              title="Strikethrough"
+            >
+              <Strikethrough className="w-3.5 h-3.5" />
             </button>
 
             <div className="w-px h-4 bg-slate-800 mx-1" />
 
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('insertUnorderedList')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Bulleted List"
             >
-              <List className="w-4 h-4" />
+              <List className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('insertOrderedList')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Numbered List"
             >
-              <ListOrdered className="w-4 h-4" />
+              <ListOrdered className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => executeCommand('formatBlock', '<blockquote>')}
               className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
               title="Quote Callout"
             >
-              <Quote className="w-4 h-4" />
+              <Quote className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* macOS Multi-Color Highlighter Bar */}
+          {/* Right: Multi-Color Palette + Selection Pop-up hint */}
           <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950/80 border border-slate-800/80 shadow-sm">
             <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 pl-1 pr-1">
               <Highlighter className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Highlight:</span>
+              <span className="hidden sm:inline">Highlight:</span>
             </span>
 
             {MAC_HIGHLIGHT_COLORS.map((col) => (
               <button
                 key={col.id}
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => applyColorHighlight(col)}
-                className={`w-5 h-5 rounded-full ${col.dotClass} hover:scale-115 active:scale-90 transition-all cursor-pointer shadow-sm hover:ring-2 hover:ring-white`}
-                title={`Highlight selected text with ${col.name}`}
+                className={`w-4.5 h-4.5 rounded-full ${col.dotClass} hover:scale-120 active:scale-90 transition-all cursor-pointer shadow-sm hover:ring-2 hover:ring-white`}
+                title={`Highlight selected text with ${col.name} (or select text to pop-up menu)`}
               />
             ))}
 
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => applyColorHighlight(null)}
               className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors ml-1 cursor-pointer"
               title="Clear Highlight"
@@ -315,13 +367,29 @@ export default function MacNotesEditor({
           contentEditable={!readOnly}
           onInput={handleInput}
           data-placeholder={placeholder}
-          className={`min-h-[380px] focus:outline-none text-sm text-slate-100 leading-relaxed font-sans space-y-3 mac-notes-content ${
+          className={`min-h-[340px] focus:outline-none text-sm text-slate-100 leading-relaxed font-sans space-y-3 mac-notes-content ${
             readOnly ? 'cursor-default' : 'cursor-text'
           }`}
           style={{
             wordBreak: 'break-word',
           }}
         />
+      </div>
+
+      {/* macOS Notes Status Bar (Word & Character counter, Read time) */}
+      <div className="px-5 py-2 bg-slate-900/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
+        <div className="flex items-center gap-3">
+          <span>{stats.words} words</span>
+          <span className="w-1 h-1 rounded-full bg-slate-700" />
+          <span>{stats.chars} characters</span>
+          <span className="w-1 h-1 rounded-full bg-slate-700 hidden sm:inline" />
+          <span className="hidden sm:inline">~{readTimeMin} min read</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-cyan-400/90 text-[10px]">
+          <Sparkles className="w-3 h-3 text-cyan-400" />
+          <span className="hidden md:inline">Select text anytime for floating highlight pop-up</span>
+        </div>
       </div>
     </div>
   );
