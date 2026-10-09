@@ -9,7 +9,7 @@ import {
   deleteDoc, 
   updateDoc 
 } from 'firebase/firestore';
-import { INITIAL_PROBLEMS, INITIAL_TASKS, generateInitialDailyLogs } from '../lib/demoData';
+import { DEMO_PROBLEM_IDS, DEMO_TASK_IDS } from '../lib/demoData';
 import { XP_REWARDS, calculateLevel, ACHIEVEMENTS } from '../lib/xpEngine';
 import { getNextRevisionDate } from '../lib/revisionEngine';
 import { format } from 'date-fns';
@@ -43,22 +43,22 @@ export function DataProvider({ children }) {
   };
 
   const [problems, setProblems] = useState(() => 
-    loadScopedStorage('problems', isDemoMode ? INITIAL_PROBLEMS : [])
+    loadScopedStorage('problems', [])
   );
   const [tasks, setTasks] = useState(() => 
-    loadScopedStorage('tasks', isDemoMode ? INITIAL_TASKS : [])
+    loadScopedStorage('tasks', [])
   );
   const [dailyLogs, setDailyLogs] = useState(() => 
-    loadScopedStorage('daily_logs', isDemoMode ? generateInitialDailyLogs() : {})
+    loadScopedStorage('daily_logs', {})
   );
   const [xp, setXp] = useState(() => 
-    loadScopedStorage('xp', isDemoMode ? 420 : 0)
+    Number(loadScopedStorage('xp', 0))
   );
   const [unlockedAchievements, setUnlockedAchievements] = useState(() => 
-    loadScopedStorage('achievements', isDemoMode ? ['first_solve', 'streak_3'] : [])
+    loadScopedStorage('achievements', [])
   );
   const [roadmapProgress, setRoadmapProgress] = useState(() => 
-    loadScopedStorage('roadmap_progress', isDemoMode ? { 'aws-devops-30': ['day-1', 'day-2', 'day-3'] } : {})
+    loadScopedStorage('roadmap_progress', {})
   );
   const [userProfile, setUserProfile] = useState(() => 
     loadScopedStorage('user_profile', {
@@ -76,34 +76,18 @@ export function DataProvider({ children }) {
 
   // Sync state when active user or demo mode changes
   useEffect(() => {
-    if (isDemoMode || !currentUid) {
-      // Demo Mode: Load demo state isolated to demo keys
-      const savedProbs = localStorage.getItem('grindtrack_demo_problems');
-      setProblems(savedProbs ? JSON.parse(savedProbs) : INITIAL_PROBLEMS);
+    // Purge any residual demo keys from localStorage
+    ['problems', 'tasks', 'daily_logs', 'xp', 'achievements', 'roadmap_progress', 'user_profile', 'demo_mode'].forEach((k) => {
+      localStorage.removeItem(`grindtrack_demo_${k}`);
+    });
 
-      const savedTasks = localStorage.getItem('grindtrack_demo_tasks');
-      setTasks(savedTasks ? JSON.parse(savedTasks) : INITIAL_TASKS);
-
-      const savedLogs = localStorage.getItem('grindtrack_demo_daily_logs');
-      setDailyLogs(savedLogs ? JSON.parse(savedLogs) : generateInitialDailyLogs());
-
-      const savedXp = localStorage.getItem('grindtrack_demo_xp');
-      setXp(savedXp ? parseInt(savedXp, 10) : 420);
-
-      const savedAch = localStorage.getItem('grindtrack_demo_achievements');
-      setUnlockedAchievements(savedAch ? JSON.parse(savedAch) : ['first_solve', 'streak_3']);
-
-      const savedRoadmap = localStorage.getItem('grindtrack_demo_roadmap_progress');
-      setRoadmapProgress(savedRoadmap ? JSON.parse(savedRoadmap) : { 'aws-devops-30': ['day-1', 'day-2', 'day-3'] });
-
-      const savedProfile = localStorage.getItem('grindtrack_demo_user_profile');
-      setUserProfile(savedProfile ? JSON.parse(savedProfile) : {
-        bio: 'Data Structures & Algorithms Enthusiast',
-        targetRole: 'Software Engineer',
-        leetcodeUsername: '',
-        githubUsername: '',
-      });
-
+    if (!currentUid) {
+      setProblems([]);
+      setTasks([]);
+      setDailyLogs({});
+      setXp(0);
+      setUnlockedAchievements([]);
+      setRoadmapProgress({});
       setIsLoadingData(false);
       return;
     }
@@ -119,10 +103,16 @@ export function DataProvider({ children }) {
     const userProfileKey = getStorageKey(currentUid, false, 'user_profile');
 
     const cachedProbs = localStorage.getItem(userProbsKey);
-    setProblems(cachedProbs ? JSON.parse(cachedProbs) : []);
+    const cleanCachedProbs = cachedProbs
+      ? JSON.parse(cachedProbs).filter((p) => !DEMO_PROBLEM_IDS.includes(p.id))
+      : [];
+    setProblems(cleanCachedProbs);
 
     const cachedTasks = localStorage.getItem(userTasksKey);
-    setTasks(cachedTasks ? JSON.parse(cachedTasks) : []);
+    const cleanCachedTasks = cachedTasks
+      ? JSON.parse(cachedTasks).filter((t) => !DEMO_TASK_IDS.includes(t.id))
+      : [];
+    setTasks(cleanCachedTasks);
 
     const cachedLogs = localStorage.getItem(userLogsKey);
     setDailyLogs(cachedLogs ? JSON.parse(cachedLogs) : {});
@@ -182,15 +172,23 @@ export function DataProvider({ children }) {
           localStorage.setItem(userLogsKey, JSON.stringify(data.dailyLogs));
         }
 
-        // If direct arrays exist on document, sync them if local state is empty
-        if (Array.isArray(data.problems) && data.problems.length > 0) {
-          setProblems((prev) => (prev.length === 0 ? data.problems : prev));
-          localStorage.setItem(userProbsKey, JSON.stringify(data.problems));
+        // If direct arrays exist on document, purge any demo items and sync
+        if (Array.isArray(data.problems)) {
+          const cleanProbs = data.problems.filter((p) => !DEMO_PROBLEM_IDS.includes(p.id));
+          setProblems(cleanProbs);
+          localStorage.setItem(userProbsKey, JSON.stringify(cleanProbs));
+          if (cleanProbs.length !== data.problems.length) {
+            syncUserToFirestore({ problems: cleanProbs });
+          }
         }
 
-        if (Array.isArray(data.tasks) && data.tasks.length > 0) {
-          setTasks((prev) => (prev.length === 0 ? data.tasks : prev));
-          localStorage.setItem(userTasksKey, JSON.stringify(data.tasks));
+        if (Array.isArray(data.tasks)) {
+          const cleanTasks = data.tasks.filter((t) => !DEMO_TASK_IDS.includes(t.id));
+          setTasks(cleanTasks);
+          localStorage.setItem(userTasksKey, JSON.stringify(cleanTasks));
+          if (cleanTasks.length !== data.tasks.length) {
+            syncUserToFirestore({ tasks: cleanTasks });
+          }
         }
       } else {
         // Initialize brand new user record in Firestore
@@ -240,7 +238,14 @@ export function DataProvider({ children }) {
     const probCollectionRef = collection(userDocRef, 'problems');
     const probUnsub = onSnapshot(probCollectionRef, (snap) => {
       const list = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (DEMO_PROBLEM_IDS.includes(d.id)) {
+          // Permanently purge legacy demo problem from Firestore
+          deleteDoc(doc(db, 'users', currentUid, 'problems', d.id)).catch(() => {});
+        } else {
+          list.push({ id: d.id, ...d.data() });
+        }
+      });
       setProblems(list);
       localStorage.setItem(userProbsKey, JSON.stringify(list));
     }, (err) => {
@@ -251,7 +256,14 @@ export function DataProvider({ children }) {
     const taskCollectionRef = collection(userDocRef, 'tasks');
     const taskUnsub = onSnapshot(taskCollectionRef, (snap) => {
       const list = [];
-      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => {
+        if (DEMO_TASK_IDS.includes(d.id)) {
+          // Permanently purge legacy demo task from Firestore
+          deleteDoc(doc(db, 'users', currentUid, 'tasks', d.id)).catch(() => {});
+        } else {
+          list.push({ id: d.id, ...d.data() });
+        }
+      });
       setTasks(list);
       localStorage.setItem(userTasksKey, JSON.stringify(list));
     }, (err) => {
@@ -728,33 +740,46 @@ export function DataProvider({ children }) {
     });
   };
 
-  // Load curated starter pack into user's account
-  const loadStarterData = async () => {
-    const initialLogs = generateInitialDailyLogs();
-    setProblems(INITIAL_PROBLEMS);
-    setTasks(INITIAL_TASKS);
-    setDailyLogs(initialLogs);
-    setXp(420);
-    setUnlockedAchievements(['first_solve', 'streak_3']);
+  // Purge all legacy demo items (prob-1..5, task-1..4) from state and Firestore
+  const purgeDemoData = async () => {
+    const cleanProbs = problems.filter((p) => !DEMO_PROBLEM_IDS.includes(p.id));
+    const cleanTasks = tasks.filter((t) => !DEMO_TASK_IDS.includes(t.id));
+
+    setProblems(cleanProbs);
+    setTasks(cleanTasks);
+
+    const userProbsKey = getStorageKey(currentUid, false, 'problems');
+    const userTasksKey = getStorageKey(currentUid, false, 'tasks');
+    localStorage.setItem(userProbsKey, JSON.stringify(cleanProbs));
+    localStorage.setItem(userTasksKey, JSON.stringify(cleanTasks));
+
+    // Clear legacy demo keys
+    ['problems', 'tasks', 'daily_logs', 'xp', 'achievements', 'roadmap_progress', 'user_profile', 'demo_mode'].forEach((k) => {
+      localStorage.removeItem(`grindtrack_demo_${k}`);
+    });
 
     if (currentUser && !isDemoMode) {
-      for (const prob of INITIAL_PROBLEMS) {
-        await setDoc(doc(db, 'users', currentUser.uid, 'problems', prob.id), prob);
+      for (const id of DEMO_PROBLEM_IDS) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', id));
+        } catch (_) {}
       }
-      for (const task of INITIAL_TASKS) {
-        await setDoc(doc(db, 'users', currentUser.uid, 'tasks', task.id), task);
+      for (const id of DEMO_TASK_IDS) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', id));
+        } catch (_) {}
       }
-      syncUserToFirestore({
-        problems: INITIAL_PROBLEMS,
-        tasks: INITIAL_TASKS,
-        dailyLogs: initialLogs,
-        xp: 420,
-        unlockedAchievements: ['first_solve', 'streak_3'],
+      await syncUserToFirestore({
+        problems: cleanProbs,
+        tasks: cleanTasks,
       });
     }
   };
 
-  // Clear/Reset all data for current user
+  // Backwards compatibility alias
+  const loadStarterData = purgeDemoData;
+
+  // Clear/Reset all data for current user to a fresh zero slate
   const clearUserData = async () => {
     const prevProblems = [...problems];
     const prevTasks = [...tasks];
@@ -764,20 +789,44 @@ export function DataProvider({ children }) {
     setDailyLogs({});
     setXp(0);
     setUnlockedAchievements([]);
+    setRoadmapProgress({});
+
+    const userProbsKey = getStorageKey(currentUid, false, 'problems');
+    const userTasksKey = getStorageKey(currentUid, false, 'tasks');
+    const userLogsKey = getStorageKey(currentUid, false, 'daily_logs');
+    const userXpKey = getStorageKey(currentUid, false, 'xp');
+    const userAchKey = getStorageKey(currentUid, false, 'achievements');
+    const userRoadmapKey = getStorageKey(currentUid, false, 'roadmap_progress');
+
+    localStorage.setItem(userProbsKey, JSON.stringify([]));
+    localStorage.setItem(userTasksKey, JSON.stringify([]));
+    localStorage.setItem(userLogsKey, JSON.stringify({}));
+    localStorage.setItem(userXpKey, '0');
+    localStorage.setItem(userAchKey, JSON.stringify([]));
+    localStorage.setItem(userRoadmapKey, JSON.stringify({}));
+
+    ['problems', 'tasks', 'daily_logs', 'xp', 'achievements', 'roadmap_progress', 'user_profile', 'demo_mode'].forEach((k) => {
+      localStorage.removeItem(`grindtrack_demo_${k}`);
+    });
 
     if (currentUser && !isDemoMode) {
       for (const p of prevProblems) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', p.id));
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', p.id));
+        } catch (_) {}
       }
       for (const t of prevTasks) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id));
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id));
+        } catch (_) {}
       }
-      syncUserToFirestore({
+      await syncUserToFirestore({
         problems: [],
         tasks: [],
         dailyLogs: {},
         xp: 0,
         unlockedAchievements: [],
+        roadmapProgress: {},
         streak: 0,
       });
     }
@@ -889,6 +938,7 @@ export function DataProvider({ children }) {
     saveRoadmapProgress,
     saveUserProfile,
     loadStarterData,
+    purgeDemoData,
     clearUserData,
     importUserData,
   };

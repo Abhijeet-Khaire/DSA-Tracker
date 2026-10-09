@@ -74,7 +74,7 @@ export default function Settings() {
     levelInfo, 
     userProfile, 
     saveUserProfile, 
-    loadStarterData, 
+    purgeDemoData, 
     clearUserData, 
     importUserData,
     calculateStreak 
@@ -206,10 +206,10 @@ export default function Settings() {
     }
   };
 
-  const handleLoadStarterData = async () => {
-    if (window.confirm('Load curated starter pack with essential DSA problems and daily productivity habits?')) {
-      await loadStarterData();
-      showNotification('Curated starter pack loaded successfully!');
+  const handlePurgeDemoData = async () => {
+    if (window.confirm('Remove all demo problems (Two Sum, LRU Cache, etc.) and mock starter tasks from your account?')) {
+      await purgeDemoData();
+      showNotification('Demo data successfully removed from your account!');
     }
   };
 
@@ -771,21 +771,21 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Load Curated Pack */}
+            {/* Purge Demo Data Option */}
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <span className="font-bold text-slate-200 text-xs flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-cyan-400" /> Curated DSA Starter Pack
+                  <Trash2 className="w-4 h-4 text-amber-400" /> Purge Demo Data
                 </span>
                 <span className="text-[11px] text-slate-400 mt-0.5 block">
-                  Quickly seed your account with classic NeetCode / Striver-style foundational DSA problems and daily tasks.
+                  Instantly remove any residual demo problems (Two Sum, LRU Cache, etc.) and mock starter tasks from your account.
                 </span>
               </div>
               <MotionButton
-                onClick={handleLoadStarterData}
-                className="px-4 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-bold flex items-center gap-2 shrink-0"
+                onClick={handlePurgeDemoData}
+                className="px-4 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-2 shrink-0 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" /> Load Starter Pack
+                <Trash2 className="w-4 h-4" /> Remove Demo Data
               </MotionButton>
             </div>
 
