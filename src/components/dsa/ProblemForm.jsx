@@ -69,7 +69,7 @@ export default function ProblemForm({ isOpen, onClose, onSubmit, initialData = n
           <input
             type="text"
             required
-            placeholder="e.g. 3Sum, Course Schedule, Minimum Window Substring"
+            placeholder="Enter problem title"
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
@@ -176,7 +176,7 @@ export default function ProblemForm({ isOpen, onClose, onSubmit, initialData = n
           <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Approach & Notes</label>
           <textarea
             rows={3}
-            placeholder="Key insights, time/space complexity, trick edge cases..."
+            placeholder="Add solution approach, time and space complexity, or key edge cases..."
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
             className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 transition-colors"

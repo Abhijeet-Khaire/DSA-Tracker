@@ -51,7 +51,7 @@ export default function Login() {
             <Zap className="w-6 h-6 text-white fill-white" />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-100 font-sans tracking-tight">Sign in to GrindTrack</h2>
-          <p className="text-xs text-slate-400">Master Data Structures, Algorithms & Habits</p>
+          <p className="text-xs text-slate-400">Enter your credentials to access your account</p>
         </div>
 
         {error && (
@@ -105,7 +105,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="name@example.com"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -117,7 +117,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Enter your password"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -130,10 +130,10 @@ export default function Login() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <WebLoader size="sm" showProgress={false} showBadges={false} className="p-0 !min-h-0" />
-                <span>Signing In...</span>
+                <span>Signing in...</span>
               </span>
             ) : (
-              'Sign In with Email'
+              'Sign In'
             )}
           </button>
         </form>

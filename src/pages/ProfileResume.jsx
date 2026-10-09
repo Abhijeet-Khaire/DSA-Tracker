@@ -356,7 +356,7 @@ export default function ProfileResume() {
               required
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              placeholder="e.g. Alex Rivers"
+              placeholder="Enter your full name"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -368,7 +368,7 @@ export default function ProfileResume() {
               required
               value={editRole}
               onChange={(e) => setEditRole(e.target.value)}
-              placeholder="e.g. Cloud & DevOps Engineer"
+              placeholder="e.g. Software Engineer, Backend Developer"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -379,7 +379,7 @@ export default function ProfileResume() {
               rows="3"
               value={editBio}
               onChange={(e) => setEditBio(e.target.value)}
-              placeholder="Brief summary of your learning journey and technical goals..."
+              placeholder="Brief summary of your background, technical interests, and goals..."
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 resize-none"
             />
           </div>
@@ -391,7 +391,7 @@ export default function ProfileResume() {
                 type="text"
                 value={editLeetCode}
                 onChange={(e) => setEditLeetCode(e.target.value)}
-                placeholder="e.g. neal_wu"
+                placeholder="Enter LeetCode username"
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -401,7 +401,7 @@ export default function ProfileResume() {
                 type="text"
                 value={editGithub}
                 onChange={(e) => setEditGithub(e.target.value)}
-                placeholder="e.g. octocat"
+                placeholder="Enter GitHub username"
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
               />
             </div>

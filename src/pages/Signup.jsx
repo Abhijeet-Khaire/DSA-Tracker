@@ -58,7 +58,7 @@ export default function Signup() {
             <Zap className="w-6 h-6 text-white fill-white" />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-100 font-sans tracking-tight">Create your account</h2>
-          <p className="text-xs text-slate-400">Join GrindTrack and save your progress to cloud</p>
+          <p className="text-xs text-slate-400">Create an account to track your progress and sync across devices</p>
         </div>
 
         {error && (
@@ -112,7 +112,7 @@ export default function Signup() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Abhijeet Khaire"
+              placeholder="Enter your full name"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -124,19 +124,22 @@ export default function Signup() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="name@example.com"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 uppercase mb-1">Password</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-300 uppercase">Password</label>
+              <span className="text-[11px] text-slate-500 font-medium">Minimum 6 characters</span>
+            </div>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="•••••••• (Min 6 characters)"
+              placeholder="Create a password"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -148,7 +151,7 @@ export default function Signup() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Confirm your password"
               className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -161,7 +164,7 @@ export default function Signup() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <WebLoader size="sm" showProgress={false} showBadges={false} className="p-0 !min-h-0" />
-                <span>Registering Account & Database...</span>
+                <span>Creating account...</span>
               </span>
             ) : (
               'Create Account'

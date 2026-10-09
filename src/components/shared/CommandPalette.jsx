@@ -67,7 +67,7 @@ export default function CommandPalette({ isOpen, onClose }) {
               <input
                 type="text"
                 autoFocus
-                placeholder="Type a command or search problems & tasks (Cmd + K)..."
+                placeholder="Search problems, tasks, or commands..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full bg-transparent text-slate-100 text-sm focus:outline-none"

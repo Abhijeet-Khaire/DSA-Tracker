@@ -36,7 +36,7 @@ export default function TaskForm({ isOpen, onClose, onSubmit }) {
           <input
             type="text"
             required
-            placeholder="e.g. Solve 2 DP problems, 30 min System Design reading"
+            placeholder="Enter task title or objective"
             value={taskData.title}
             onChange={(e) => setTaskData({ ...taskData, title: e.target.value })}
             className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"

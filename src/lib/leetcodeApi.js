@@ -25,7 +25,7 @@ export function parseLeetCodeUsername(input) {
 export async function fetchLeetCodeStats(input) {
   const username = parseLeetCodeUsername(input);
   if (!username) {
-    throw new Error('Please enter a valid LeetCode profile URL (e.g. https://leetcode.com/u/your_username) or username.');
+    throw new Error('Please enter a valid LeetCode profile URL or username.');
   }
 
   // Live public API endpoints with open CORS

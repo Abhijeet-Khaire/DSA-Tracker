@@ -38,7 +38,7 @@ export default function LeetCodeImportModal({ isOpen, onClose }) {
     e.preventDefault();
     const cleanUsername = parseLeetCodeUsername(inputVal);
     if (!cleanUsername) {
-      setError('Please enter your LeetCode profile URL (e.g. https://leetcode.com/u/your_username) or username.');
+      setError('Please enter a valid LeetCode profile URL or username.');
       return;
     }
 
@@ -96,7 +96,7 @@ export default function LeetCodeImportModal({ isOpen, onClose }) {
     <Modal isOpen={isOpen} onClose={onClose} title="Import LeetCode Profile" maxWidth="max-w-lg">
       <div className="space-y-5">
         <p className="text-xs text-slate-400 leading-relaxed">
-          Paste your public LeetCode profile URL to sync your live statistics, global rank, and credit your earned XP directly to your account.
+          Enter your public LeetCode profile URL or username to synchronize your statistics, global rank, and XP directly to your account.
         </p>
 
         {/* Input form */}
@@ -106,7 +106,7 @@ export default function LeetCodeImportModal({ isOpen, onClose }) {
               <Globe className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="https://leetcode.com/u/username or username"
+                placeholder="Enter LeetCode profile URL or username"
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all font-mono"
