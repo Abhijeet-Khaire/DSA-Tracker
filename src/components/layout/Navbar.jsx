@@ -13,7 +13,7 @@ import { Sun, Moon, LogOut, Search, Timer, Sparkles } from 'lucide-react';
 import { isReducedMotionPreferred } from '../../animations/motionConfig';
 
 export default function Navbar() {
-  const { currentUser, isDemoMode, logout } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { xp, levelInfo, calculateStreak } = useData();
   const { theme, toggleTheme } = useTheme();
 
@@ -25,7 +25,7 @@ export default function Navbar() {
 
   return (
     <header className="h-16 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-40 shrink-0">
-      {/* Left: Command Palette trigger & Demo badge */}
+      {/* Left: Command Palette trigger */}
       <div className="flex items-center gap-4">
         <motion.button
           onClick={() => setIsCommandOpen(true)}
@@ -36,17 +36,6 @@ export default function Navbar() {
           <Search className="w-3.5 h-3.5 text-cyan-400" />
           <span className="hidden sm:inline">Search or Cmd + K...</span>
         </motion.button>
-
-        {isDemoMode && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold animate-pulse"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Demo Mode Active</span>
-          </motion.div>
-        )}
       </div>
 
       {/* Right: Timer, Streak, Level, Theme & User */}

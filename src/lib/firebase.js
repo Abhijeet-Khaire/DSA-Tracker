@@ -27,7 +27,7 @@ export function formatAuthError(error) {
   const msg = error.message || '';
 
   if (code === 'auth/operation-not-allowed' || msg.includes('OPERATION_NOT_ALLOWED')) {
-    return 'Email/Password sign-in is not enabled in your Firebase Console. Please go to Firebase Console > Authentication > Sign-in method, click "Email/Password", and enable it.';
+    return 'This sign-in provider is not enabled in Firebase Console. Please go to Firebase Console > Authentication > Sign-in method, and verify Email/Password and Google are enabled.';
   }
   if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
     return 'Invalid email or password. Please verify your credentials or create a new account.';
@@ -45,13 +45,14 @@ export function formatAuthError(error) {
     return 'Please enter a valid email address.';
   }
   if (code === 'auth/popup-closed-by-user') {
-    return 'Google sign-in popup was closed before completion.';
+    return 'Google sign-in popup was closed before completion. Please try again.';
   }
   if (code === 'auth/popup-blocked') {
-    return 'The sign-in popup was blocked by your browser. Please allow popups for this site.';
+    return 'The sign-in popup was blocked by your browser. Redirecting you to sign in directly with Google...';
   }
   if (code === 'auth/unauthorized-domain') {
-    return 'This domain is not authorized in your Firebase Console (Authentication > Settings > Authorized domains).';
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'current domain';
+    return `The domain "${host}" is not authorized in Firebase Console. If using 127.0.0.1, please access via http://localhost:3000 or add "${host}" to Firebase Console > Authentication > Settings > Authorized domains.`;
   }
   if (code === 'auth/network-request-failed') {
     return 'Network connection failed. Please check your internet connection.';

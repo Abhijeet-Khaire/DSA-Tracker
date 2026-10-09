@@ -9,7 +9,7 @@ import WebLoader from '../components/shared/WebLoader';
 import WebLoadingScreen from '../components/shared/WebLoadingScreen';
 
 export default function Settings() {
-  const { currentUser, isDemoMode } = useAuth();
+  const { currentUser } = useAuth();
   const { problems, tasks, xp, loadStarterData, clearUserData } = useData();
 
   const [reducedMotion, setReducedMotion] = useState(() => isReducedMotionPreferred());
@@ -127,12 +127,12 @@ export default function Settings() {
                 {currentUser ? currentUser.email : 'Not logged in'}
               </span>
             </div>
-            <span className={`px-3 py-1 rounded-full font-bold self-start sm:self-auto ${isDemoMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
-              {isDemoMode ? 'Local Demo Mode (Sandboxed)' : 'Firebase Cloud Sync (Isolated User)'}
+            <span className="px-3 py-1 rounded-full font-bold self-start sm:self-auto bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Firebase Cloud Sync (Isolated User)
             </span>
           </div>
 
-          {!isDemoMode && currentUser && (
+          {currentUser && (
             <div className="pt-2 border-t border-slate-800/80 space-y-2">
               <div>
                 <span className="text-slate-400 block">User Name & ID:</span>

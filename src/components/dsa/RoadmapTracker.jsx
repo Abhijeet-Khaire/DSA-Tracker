@@ -25,7 +25,7 @@ import { isReducedMotionPreferred, SPRING_SMOOTH, SPRING_TACTILE } from '../../a
 
 export default function RoadmapTracker() {
   const { problems, addProblem, addTask, addXp, roadmapProgress, saveRoadmapProgress } = useData();
-  const { currentUser, isDemoMode } = useAuth();
+  const { currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const prefersReduced = isReducedMotionPreferred();
 
