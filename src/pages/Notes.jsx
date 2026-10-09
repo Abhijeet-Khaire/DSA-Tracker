@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useData } from '../context/DataContext';
-import HighlightedMarkdown from '../components/notes/HighlightedMarkdown';
+import MacNotesEditor, { normalizeContentToHtml } from '../components/notes/MacNotesEditor';
 import MotionButton from '../components/motion/MotionButton';
 import { CURATED_PATTERN_NOTES, NOTE_CATEGORIES, HIGHLIGHT_COLORS } from '../lib/curatedNotes';
 import { 
@@ -11,23 +11,14 @@ import {
   X, 
   Sparkles, 
   Code2, 
-  Tag, 
-  Highlighter,
-  Pin,
-  FileText,
-  Trash2,
-  Edit3,
-  Eye,
-  Check,
+  Pin, 
+  FileText, 
+  Trash2, 
+  Copy, 
+  Calendar, 
   ChevronLeft,
-  Bold,
-  Code,
-  Quote,
-  Copy,
-  FolderOpen,
-  Calendar,
-  ExternalLink,
-  Save
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
@@ -45,10 +36,12 @@ const PROGRAMMING_LANGS = [
 function getPreviewSnippet(content) {
   if (!content) return 'No additional text';
   return content
+    .replace(/<[^>]*>/g, ' ') // Strip HTML tags
     .replace(/==([a-zA-Z]+:)?/g, '')
     .replace(/==/g, '')
     .replace(/```[a-z]*[\s\S]*?```/g, '[Code Template]')
     .replace(/[#*`>_]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 95);
 }
@@ -65,13 +58,11 @@ export default function Notes() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   
-  // View mode in editor: 'write' | 'preview'
-  const [editorMode, setEditorMode] = useState('write');
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [saveIndicator, setSaveIndicator] = useState('Saved');
   const [isMobileListVisible, setIsMobileListVisible] = useState(true);
 
-  const textareaRef = useRef(null);
   const titleInputRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
@@ -83,9 +74,9 @@ export default function Notes() {
         id: `prob-note-${p.id}`,
         title: `${p.title} (${p.difficulty})`,
         category: p.topic || 'Problems',
-        accentColor: p.difficulty === 'Hard' ? 'rose' : p.difficulty === 'Medium' ? 'amber' : 'emerald',
+        accentColor: p.difficulty === 'Hard' ? 'pink' : p.difficulty === 'Medium' ? 'yellow' : 'green',
         tags: [p.topic, p.platform || 'LeetCode', p.difficulty].filter(Boolean),
-        content: p.notes,
+        content: normalizeContentToHtml(p.notes),
         codeSnippet: '',
         isPinned: false,
         isFromProblem: true,
@@ -154,7 +145,7 @@ export default function Notes() {
       category: 'Patterns',
       accentColor: 'cyan',
       tags: [],
-      content: '',
+      content: '<p><br></p>',
       codeSnippet: '',
       language: 'cpp',
       isPinned: false,
@@ -164,7 +155,6 @@ export default function Notes() {
 
     await addNote(newNote);
     setSelectedNoteId(newId);
-    setEditorMode('write');
     setIsMobileListVisible(false);
 
     // Auto focus title input
@@ -189,76 +179,6 @@ export default function Notes() {
     }, 600);
   };
 
-  // Multi-color highlight wrapper tool
-  const applyHighlightColor = (colorId) => {
-    if (!activeNote || activeNote.isCurated || activeNote.isFromProblem) return;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = activeNote.content || '';
-    const selectedText = text.substring(start, end);
-
-    let replacement = '';
-    if (selectedText) {
-      replacement = `==${colorId}:${selectedText}==`;
-    } else {
-      replacement = `==${colorId}:highlighted text==`;
-    }
-
-    const nextContent = text.substring(0, start) + replacement + text.substring(end);
-    handleUpdateActiveField('content', nextContent);
-
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(
-        start + (selectedText ? replacement.length : 2 + colorId.length + 1),
-        start + replacement.length - 2
-      );
-    }, 10);
-  };
-
-  // Quick formatting tool (Bold, Code, Quote)
-  const applyFormatting = (type) => {
-    if (!activeNote || activeNote.isCurated || activeNote.isFromProblem) return;
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = activeNote.content || '';
-    const selectedText = text.substring(start, end);
-
-    let prefix = '';
-    let suffix = '';
-    let fallback = '';
-
-    if (type === 'bold') {
-      prefix = '**';
-      suffix = '**';
-      fallback = 'bold text';
-    } else if (type === 'code') {
-      prefix = '`';
-      suffix = '`';
-      fallback = 'code';
-    } else if (type === 'quote') {
-      prefix = '> ';
-      suffix = '';
-      fallback = 'key takeaway';
-    }
-
-    const replacement = prefix + (selectedText || fallback) + suffix;
-    const nextContent = text.substring(0, start) + replacement + text.substring(end);
-    handleUpdateActiveField('content', nextContent);
-
-    setTimeout(() => {
-      textarea.focus();
-      const cursorEnd = start + replacement.length;
-      textarea.setSelectionRange(cursorEnd, cursorEnd);
-    }, 10);
-  };
-
   // Duplicate a curated note into My Notes for personal editing
   const handleDuplicateCuratedNote = async (curatedNote) => {
     const copyId = `note-${Date.now()}`;
@@ -266,6 +186,7 @@ export default function Notes() {
       ...curatedNote,
       id: copyId,
       title: `${curatedNote.title} (Custom)`,
+      content: normalizeContentToHtml(curatedNote.content),
       isCurated: false,
       isPinned: false,
       createdAt: new Date().toISOString(),
@@ -274,7 +195,6 @@ export default function Notes() {
     await addNote(duplicate);
     setActiveFolder('my');
     setSelectedNoteId(copyId);
-    setEditorMode('write');
   };
 
   // Delete current active note
@@ -284,6 +204,13 @@ export default function Notes() {
       await deleteNote(activeNote.id);
       setSelectedNoteId(null);
     }
+  };
+
+  const handleCopySnippet = () => {
+    if (!activeNote?.codeSnippet) return;
+    navigator.clipboard.writeText(activeNote.codeSnippet);
+    setCopiedSnippet(true);
+    setTimeout(() => setCopiedSnippet(false), 2000);
   };
 
   // Separate pinned and regular notes
@@ -305,7 +232,7 @@ export default function Notes() {
                 {notes.length} total
               </span>
             </h1>
-            <p className="text-[11px] text-slate-400">macOS-style fast note taking & pattern revision</p>
+            <p className="text-[11px] text-slate-400">macOS-style WYSIWYG notes & visual highlighter</p>
           </div>
         </div>
 
@@ -384,7 +311,7 @@ export default function Notes() {
                 <button
                   onClick={handleCreateNewNote}
                   className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shrink-0 shadow-sm"
-                  title="New Note (Cmd+N)"
+                  title="New Note (⌘N)"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">New</span>
@@ -469,15 +396,14 @@ export default function Notes() {
           </div>
         </div>
 
-        {/* ================= RIGHT PANE: macOS Note Workspace ================= */}
+        {/* ================= RIGHT PANE: macOS WYSIWYG Workspace ================= */}
         <div className={`flex-1 flex flex-col bg-slate-900/40 h-full overflow-hidden ${
           isMobileListVisible ? 'hidden md:flex' : 'flex'
         }`}>
           {activeNote ? (
-            <>
-              {/* macOS Editor Top Toolbar */}
-              <div className="p-3 border-b border-slate-800/80 bg-slate-950/70 flex flex-wrap items-center justify-between gap-2 shrink-0">
-                {/* Mobile Back Button & Category / Status */}
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+              {/* Note Header Meta Bar */}
+              <div className="px-6 pt-4 pb-2 border-b border-slate-800/80 bg-slate-950/70 flex flex-wrap items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsMobileListVisible(true)}
@@ -504,14 +430,14 @@ export default function Notes() {
                     </span>
                   )}
 
-                  {/* Note Accent Color Picker */}
+                  {/* Note Accent Color Dot Selector */}
                   {!activeNote.isCurated && !activeNote.isFromProblem && (
                     <div className="flex items-center gap-1 ml-1">
                       {HIGHLIGHT_COLORS.map((col) => (
                         <button
                           key={col.id}
                           onClick={() => handleUpdateActiveField('accentColor', col.id)}
-                          className={`w-4 h-4 rounded-full ${col.colorClass} transition-all cursor-pointer ${
+                          className={`w-3.5 h-3.5 rounded-full ${col.colorClass} transition-all cursor-pointer ${
                             activeNote.accentColor === col.id ? 'ring-2 ring-white scale-125' : 'opacity-60 hover:opacity-100'
                           }`}
                           title={`${col.name} Accent`}
@@ -521,85 +447,13 @@ export default function Notes() {
                   )}
                 </div>
 
-                {/* Multi-Color Highlighter Toolbar (Amber, Cyan, Emerald, Purple, Rose) */}
-                {!activeNote.isCurated && !activeNote.isFromProblem && editorMode === 'write' && (
-                  <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 pl-1 pr-0.5">
-                      <Highlighter className="w-3 h-3 text-cyan-400" />
-                    </span>
-                    {HIGHLIGHT_COLORS.map((col) => (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => applyHighlightColor(col.id)}
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer hover:scale-105 active:scale-95 ${col.badgeClass}`}
-                        title={`Highlight selected text in ${col.name}`}
-                      >
-                        {col.name}
-                      </button>
-                    ))}
-
-                    <div className="w-px h-3.5 bg-slate-800 mx-0.5" />
-
-                    <button
-                      type="button"
-                      onClick={() => applyFormatting('bold')}
-                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-                      title="Bold (**text**)"
-                    >
-                      <Bold className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyFormatting('code')}
-                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-                      title="Inline Code (`code`)"
-                    >
-                      <Code className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyFormatting('quote')}
-                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-                      title="Quote (> text)"
-                    >
-                      <Quote className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Right Actions: View Mode, Pin, Delete, Duplicate */}
+                {/* Right Actions: Autosave indicator, Pin, Duplicate, Delete */}
                 <div className="flex items-center gap-1.5">
-                  {/* Autosave status indicator */}
                   {!activeNote.isCurated && !activeNote.isFromProblem && (
-                    <span className="text-[10px] text-slate-500 font-mono hidden sm:inline mr-1">
+                    <span className="text-[10px] text-slate-500 font-mono hidden sm:inline mr-2">
                       {saveIndicator}
                     </span>
                   )}
-
-                  {/* Write vs Preview Mode Toggle */}
-                  <div className="flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800">
-                    <button
-                      onClick={() => setEditorMode('write')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                        editorMode === 'write'
-                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Edit3 className="w-3 h-3" /> Write
-                    </button>
-                    <button
-                      onClick={() => setEditorMode('preview')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                        editorMode === 'preview'
-                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Eye className="w-3 h-3" /> Preview
-                    </button>
-                  </div>
 
                   {/* Pin Toggle */}
                   {!activeNote.isCurated && !activeNote.isFromProblem && (
@@ -639,78 +493,56 @@ export default function Notes() {
                 </div>
               </div>
 
-              {/* Note Editor & Reader Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {/* Title Input (Native in-place editable!) */}
-                <div>
-                  {!activeNote.isCurated && !activeNote.isFromProblem ? (
-                    <input
-                      ref={titleInputRef}
-                      type="text"
-                      placeholder="Title of your note..."
-                      value={activeNote.title || ''}
-                      onChange={(e) => handleUpdateActiveField('title', e.target.value)}
-                      className="w-full bg-transparent text-xl font-extrabold text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors border-b border-transparent focus:border-cyan-500/40 pb-1"
-                    />
-                  ) : (
-                    <h2 className="text-xl font-extrabold text-slate-100">
-                      {activeNote.title}
-                    </h2>
-                  )}
+              {/* Title & Date Section */}
+              <div className="px-6 pt-3 pb-2 shrink-0">
+                {!activeNote.isCurated && !activeNote.isFromProblem ? (
+                  <input
+                    ref={titleInputRef}
+                    type="text"
+                    placeholder="Title..."
+                    value={activeNote.title || ''}
+                    onChange={(e) => handleUpdateActiveField('title', e.target.value)}
+                    className="w-full bg-transparent text-xl font-extrabold text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors border-b border-transparent focus:border-cyan-500/40 pb-1"
+                  />
+                ) : (
+                  <h2 className="text-xl font-extrabold text-slate-100">
+                    {activeNote.title}
+                  </h2>
+                )}
 
-                  {/* Timestamp & Tag row */}
-                  <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px] text-slate-500 font-mono">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {activeNote.updatedAt || activeNote.createdAt
-                        ? format(new Date(activeNote.updatedAt || activeNote.createdAt), 'EEEE, MMMM d, yyyy h:mm a')
-                        : 'Today'}
-                    </span>
-
-                    {/* Tag chips */}
-                    {Array.isArray(activeNote.tags) && activeNote.tags.length > 0 && (
-                      <div className="flex items-center gap-1 ml-2">
-                        {activeNote.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="px-1.5 py-0.2 rounded-md bg-slate-800 text-slate-400 border border-slate-700/60 text-[10px]"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 font-mono">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {activeNote.updatedAt || activeNote.createdAt
+                      ? format(new Date(activeNote.updatedAt || activeNote.createdAt), 'EEEE, MMMM d, yyyy h:mm a')
+                      : 'Today'}
+                  </span>
                 </div>
+              </div>
 
-                {/* Main Content Area */}
-                {editorMode === 'write' && !activeNote.isCurated && !activeNote.isFromProblem ? (
-                  <div className="space-y-4">
-                    <textarea
-                      ref={textareaRef}
-                      placeholder="Start typing your note... Use the color buttons in the toolbar above to highlight key phrases, formulas, invariants, and edge cases."
-                      value={activeNote.content || ''}
-                      onChange={(e) => handleUpdateActiveField('content', e.target.value)}
-                      className="w-full min-h-[320px] bg-transparent text-slate-200 text-sm font-mono leading-relaxed focus:outline-none resize-none placeholder:text-slate-600"
-                    />
+              {/* WYSIWYG macOS Notes Editor (Visually highlights text in real-time!) */}
+              <div className="flex-1 px-6 py-2 overflow-hidden flex flex-col">
+                <MacNotesEditor
+                  content={activeNote.content}
+                  onChange={(newHtml) => handleUpdateActiveField('content', newHtml)}
+                  readOnly={activeNote.isCurated}
+                  placeholder="Start typing your note here... Select any text and click the highlighter colors in the toolbar to mark key phrases."
+                />
+              </div>
 
-                    {/* Code Template Attachment Accordion */}
-                    <div className="pt-4 border-t border-slate-800/80 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => setShowCodeSnippet(!showCodeSnippet)}
-                          className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Code2 className="w-4 h-4" />
-                          <span>{showCodeSnippet || activeNote.codeSnippet ? 'Code Template / Snippet' : '+ Attach Code Template'}</span>
-                        </button>
-
-                        {(showCodeSnippet || activeNote.codeSnippet) && (
+              {/* Attached Code Template Drawer */}
+              {(showCodeSnippet || activeNote.codeSnippet) && (
+                <div className="px-6 pb-4 pt-1 shrink-0">
+                  <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+                    <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-900 border-b border-slate-800 text-xs font-mono text-cyan-400">
+                      <div className="flex items-center gap-2">
+                        <Code2 className="w-3.5 h-3.5" />
+                        <span className="uppercase font-bold">{activeNote.language || 'cpp'} Template</span>
+                        {!activeNote.isCurated && (
                           <select
                             value={activeNote.language || 'cpp'}
                             onChange={(e) => handleUpdateActiveField('language', e.target.value)}
-                            className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 text-xs font-mono cursor-pointer"
+                            className="ml-2 px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] cursor-pointer border border-slate-700"
                           >
                             {PROGRAMMING_LANGS.map((lang) => (
                               <option key={lang.id} value={lang.id}>{lang.label}</option>
@@ -719,45 +551,56 @@ export default function Notes() {
                         )}
                       </div>
 
-                      {(showCodeSnippet || activeNote.codeSnippet) && (
-                        <textarea
-                          rows={7}
-                          placeholder={`// Paste reusable ${activeNote.language?.toUpperCase() || 'C++'} solution algorithm or template here...`}
-                          value={activeNote.codeSnippet || ''}
-                          onChange={(e) => handleUpdateActiveField('codeSnippet', e.target.value)}
-                          className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-cyan-300 text-xs font-mono leading-relaxed focus:outline-none focus:border-cyan-500 transition-all resize-y"
-                        />
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  /* Live Rendered Markdown & Highlights Preview */
-                  <div className="space-y-4">
-                    <HighlightedMarkdown content={activeNote.content} />
-
-                    {activeNote.codeSnippet && (
-                      <div className="mt-4 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
-                        <div className="px-3.5 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs font-mono text-cyan-400">
-                          <span className="uppercase font-bold">{activeNote.language || 'Code'} Template</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(activeNote.codeSnippet);
-                              alert('Code copied to clipboard!');
-                            }}
-                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 cursor-pointer"
-                          >
-                            <Copy className="w-3 h-3" /> Copy Snippet
-                          </button>
-                        </div>
-                        <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
-                          <code>{activeNote.codeSnippet}</code>
-                        </pre>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopySnippet}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Copy className="w-3 h-3" /> {copiedSnippet ? 'Copied' : 'Copy'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCodeSnippet(false)}
+                          className="text-slate-500 hover:text-slate-300"
+                          title="Hide template"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
+                    </div>
+
+                    {!activeNote.isCurated ? (
+                      <textarea
+                        rows={5}
+                        placeholder={`// Paste reusable ${activeNote.language?.toUpperCase() || 'C++'} template code here...`}
+                        value={activeNote.codeSnippet || ''}
+                        onChange={(e) => handleUpdateActiveField('codeSnippet', e.target.value)}
+                        className="w-full p-3 bg-transparent text-cyan-300 text-xs font-mono leading-relaxed focus:outline-none resize-none"
+                      />
+                    ) : (
+                      <pre className="p-3 text-xs font-mono text-cyan-300 overflow-x-auto leading-relaxed max-h-[160px]">
+                        <code>{activeNote.codeSnippet}</code>
+                      </pre>
                     )}
                   </div>
-                )}
-              </div>
-            </>
+                </div>
+              )}
+
+              {/* Code Template Toggle Button (if hidden) */}
+              {!showCodeSnippet && !activeNote.codeSnippet && !activeNote.isCurated && (
+                <div className="px-6 pb-3 pt-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowCodeSnippet(true)}
+                    className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 cursor-pointer select-none"
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>+ Attach Code Template Snippet</span>
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             /* macOS Empty Workspace State */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
@@ -792,9 +635,9 @@ function NoteListItem({ note, isSelected, onSelect }) {
     : 'Recent';
 
   const dotColor = 
-    note.accentColor === 'rose' ? 'bg-rose-400' :
-    note.accentColor === 'amber' ? 'bg-amber-400' :
-    note.accentColor === 'emerald' ? 'bg-emerald-400' :
+    note.accentColor === 'pink' || note.accentColor === 'rose' ? 'bg-rose-400' :
+    note.accentColor === 'yellow' || note.accentColor === 'amber' ? 'bg-amber-400' :
+    note.accentColor === 'green' || note.accentColor === 'emerald' ? 'bg-emerald-400' :
     note.accentColor === 'purple' ? 'bg-purple-400' : 'bg-cyan-400';
 
   return (
