@@ -4,6 +4,7 @@ import { useData } from '../../context/DataContext';
 import { format, subDays, startOfWeek, addDays, isSameDay, isToday, isFuture, getMonth, getDay } from 'date-fns';
 import { Link } from 'react-router-dom';
 import LottieWrapper from '../shared/LottieWrapper';
+import StreakFlameDrawable from '../shared/StreakFlameDrawable';
 import AnimatedCounter from '../motion/AnimatedCounter';
 import { 
   Flame, 
@@ -237,7 +238,7 @@ export default function StreakHeatmap() {
             transition={SPRING_TACTILE}
             className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500/20 via-orange-500/20 to-cyan-500/20 border border-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/10"
           >
-            <LottieWrapper type="flame" className="w-7 h-7" />
+            <StreakFlameDrawable streak={streak} className="w-7 h-7" />
           </motion.div>
           <div>
             <div className="flex items-center gap-2">
@@ -331,7 +332,7 @@ export default function StreakHeatmap() {
             <span className="text-2xl font-black text-amber-400 tracking-tight">
               <AnimatedCounter value={streak} />
             </span>
-            <span className="text-xs font-extrabold text-amber-400">Days Active 🔥</span>
+            <span className="text-xs font-extrabold text-amber-400">Days Active</span>
           </div>
           <div className="text-[10px] text-slate-500 font-medium mt-0.5">
             Personal Record: <span className="text-slate-300 font-bold">{longestStreak} Days</span>

@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import LottieWrapper from '../shared/LottieWrapper';
+import BadgeDrawable from '../shared/BadgeDrawable';
 import Modal from '../shared/Modal';
 import MotionButton from '../motion/MotionButton';
 import { isReducedMotionPreferred, SPRING_BOUNCY } from '../../animations/motionConfig';
+import { Award, Sparkles } from 'lucide-react';
 
 export default function AchievementModal({ achievement, onClose }) {
   const prefersReduced = isReducedMotionPreferred();
@@ -24,26 +25,24 @@ export default function AchievementModal({ achievement, onClose }) {
   if (!achievement) return null;
 
   return (
-    <Modal isOpen={!!achievement} onClose={onClose} title="Achievement Unlocked! 🎉" maxWidth="max-w-md">
+    <Modal isOpen={!!achievement} onClose={onClose} title="Achievement Unlocked!" maxWidth="max-w-md">
       <div className="py-4 flex flex-col items-center justify-center text-center space-y-4">
-        {/* Animated Trophy */}
+        {/* Animated Vector Badge Drawable */}
         <motion.div
-          initial={prefersReduced ? undefined : { scale: 0.6, rotate: -10 }}
+          initial={prefersReduced ? undefined : { scale: 0.5, rotate: -8 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={SPRING_BOUNCY}
+          className="my-2"
         >
-          <LottieWrapper type="trophy" className="w-28 h-28" />
+          <BadgeDrawable 
+            drawable={achievement.drawable} 
+            isUnlocked={true} 
+            badgeColor={achievement.badgeColor} 
+            size="xl" 
+          />
         </motion.div>
 
         <div>
-          <motion.span 
-            initial={prefersReduced ? undefined : { scale: 0.4 }}
-            animate={{ scale: 1 }}
-            transition={SPRING_BOUNCY}
-            className="text-3xl mb-1 block select-none"
-          >
-            {achievement.icon}
-          </motion.span>
           <h3 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-500">
             {achievement.title}
           </h3>
@@ -54,16 +53,17 @@ export default function AchievementModal({ achievement, onClose }) {
           initial={prefersReduced ? undefined : { scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.15 }}
-          className="px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/30 text-amber-400 text-xs font-extrabold"
+          className="px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/30 text-amber-400 text-xs font-extrabold flex items-center gap-1.5"
         >
-          +{achievement.xpReward} XP Reward Claimed!
+          <Award className="w-3.5 h-3.5 text-amber-400" />
+          <span>+{achievement.xpReward} XP Reward Claimed!</span>
         </motion.div>
 
         <MotionButton
           onClick={onClose}
           className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-500/20"
         >
-          Keep Grinding 🔥
+          Continue Grind
         </MotionButton>
       </div>
     </Modal>

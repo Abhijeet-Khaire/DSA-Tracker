@@ -250,7 +250,12 @@ export default function RoadmapTracker() {
                       className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md shadow-cyan-500/25 -z-0"
                     />
                   )}
-                  <span className="relative z-10">{week.icon}</span>
+                  <span className="relative z-10">
+                    {week.weekNumber === 1 && <Terminal className="w-3.5 h-3.5 text-cyan-400" />}
+                    {week.weekNumber === 2 && <Cpu className="w-3.5 h-3.5 text-purple-400" />}
+                    {week.weekNumber === 3 && <Cloud className="w-3.5 h-3.5 text-blue-400" />}
+                    {week.weekNumber >= 4 && <Layers className="w-3.5 h-3.5 text-emerald-400" />}
+                  </span>
                   <span className="relative z-10">Week {week.weekNumber}</span>
                 </button>
               );

@@ -450,33 +450,38 @@ export function DataProvider({ children }) {
   // Check achievements unlock
   const checkAchievements = async (currentProblems, currentTasks, currentStreak) => {
     const solvedCount = currentProblems.filter(p => p.status === 'solved').length;
+    const mediumSolvedCount = currentProblems.filter(p => p.status === 'solved' && p.difficulty === 'Medium').length;
     const hardSolvedCount = currentProblems.filter(p => p.status === 'solved' && p.difficulty === 'Hard').length;
     const revisionsCompleted = currentProblems.reduce((acc, p) => acc + (p.revisionCount || 0), 0);
     const tasksCompletedCount = currentTasks.filter(t => t.status === 'done').length;
+    const currentXp = stateRef.current.xp || 0;
 
     const stats = {
       solvedCount,
+      mediumSolvedCount,
       hardSolvedCount,
       revisionsCompleted,
       tasksCompletedCount,
       streak: currentStreak,
+      xp: currentXp,
     };
 
     let updatedAchievements = [...stateRef.current.unlockedAchievements];
-    let newlyEarned = null;
+    let newlyEarnedList = [];
 
     ACHIEVEMENTS.forEach((ach) => {
       if (!updatedAchievements.includes(ach.id) && ach.condition(stats)) {
         updatedAchievements.push(ach.id);
-        newlyEarned = ach;
+        newlyEarnedList.push(ach);
       }
     });
 
-    if (newlyEarned) {
+    if (newlyEarnedList.length > 0) {
       stateRef.current.unlockedAchievements = updatedAchievements;
       setUnlockedAchievements(updatedAchievements);
-      addXp(newlyEarned.xpReward, `Achievement: ${newlyEarned.title}`);
-      setNewlyUnlocked(newlyEarned);
+      const totalBonusXp = newlyEarnedList.reduce((acc, a) => acc + a.xpReward, 0);
+      addXp(totalBonusXp, `Achievements: ${newlyEarnedList.map(a => a.title).join(', ')}`);
+      setNewlyUnlocked(newlyEarnedList[newlyEarnedList.length - 1]);
       await syncUserToFirestore({ unlockedAchievements: updatedAchievements });
     }
   };

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { CURATED_ROADMAPS } from '../lib/curatedRoadmaps';
 import LottieWrapper from '../components/shared/LottieWrapper';
+import StreakFlameDrawable from '../components/shared/StreakFlameDrawable';
 import TopicProgressChart from '../components/dsa/TopicProgressChart';
 import DifficultyChart from '../components/dsa/DifficultyChart';
 import MotionButton from '../components/motion/MotionButton';
@@ -178,7 +179,7 @@ export default function ProfileResume() {
 
           <div className="flex items-center gap-3">
             <div className="px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-2">
-              <LottieWrapper type="flame" className="w-8 h-8" />
+              <StreakFlameDrawable streak={streak} className="w-8 h-8" />
               <div>
                 <span className="text-xs font-extrabold text-amber-400 block leading-tight">
                   <AnimatedCounter value={streak} suffix=" Days" />
@@ -310,7 +311,12 @@ export default function ProfileResume() {
               >
                 <div>
                   <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-200">
-                    <span>{week.icon}</span>
+                    <span>
+                      {week.weekNumber === 1 && <Terminal className="w-3.5 h-3.5 text-cyan-400" />}
+                      {week.weekNumber === 2 && <Cpu className="w-3.5 h-3.5 text-purple-400" />}
+                      {week.weekNumber === 3 && <Cloud className="w-3.5 h-3.5 text-blue-400" />}
+                      {week.weekNumber >= 4 && <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />}
+                    </span>
                     <span>Week {week.weekNumber}</span>
                   </div>
                   <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-tight">

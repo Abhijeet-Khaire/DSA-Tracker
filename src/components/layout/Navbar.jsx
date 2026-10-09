@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import LottieWrapper from '../shared/LottieWrapper';
+import StreakFlameDrawable from '../shared/StreakFlameDrawable';
 import FocusTimerModal from '../dashboard/FocusTimerModal';
 import CommandPalette from '../shared/CommandPalette';
 import AnimatedCounter from '../motion/AnimatedCounter';
@@ -53,13 +54,13 @@ export default function Navbar() {
           <Timer className="w-5 h-5 text-cyan-400" />
         </motion.button>
 
-        {/* Active Streak with animated count */}
+        {/* Active Streak with animated count & vector flame drawable */}
         <motion.div 
           whileHover={prefersReduced ? undefined : { scale: 1.04, y: -1 }}
           transition={{ type: 'spring', stiffness: 350, damping: 25 }}
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm cursor-default"
         >
-          <LottieWrapper type="flame" className="w-6 h-6" />
+          <StreakFlameDrawable streak={streak} className="w-5 h-5" />
           <div className="flex flex-col">
             <span className="text-xs font-extrabold text-amber-400 tracking-tight leading-none">
               <AnimatedCounter value={streak} suffix=" Days" />
