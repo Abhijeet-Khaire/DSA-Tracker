@@ -28,10 +28,93 @@ export async function fetchLeetCodeStats(input) {
     throw new Error('Please enter a valid LeetCode profile URL or username.');
   }
 
-  // Live public API endpoints with open CORS
+  // Strategy 1: Official LeetCode GraphQL via local/serverless proxy (ultra-fast, 200ms)
+  try {
+    const gqlQuery = {
+      query: `
+        query getUserProfile($username: String!) {
+          matchedUser(username: $username) {
+            username
+            profile {
+              realName
+              userAvatar
+              ranking
+              reputation
+            }
+            submitStats: submitStatsGlobal {
+              acSubmissionNum {
+                difficulty
+                count
+              }
+            }
+          }
+          recentSubmissionList(username: $username) {
+            title
+            titleSlug
+            timestamp
+            statusDisplay
+            lang
+          }
+        }
+      `,
+      variables: { username },
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch('/api/leetcode-graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(gqlQuery),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data?.matchedUser) {
+        const mu = data.data.matchedUser;
+        const subList = mu.submitStats?.acSubmissionNum || [];
+        const allItem = subList.find((s) => s.difficulty === 'All') || { count: 0 };
+        const easyItem = subList.find((s) => s.difficulty === 'Easy') || { count: 0 };
+        const mediumItem = subList.find((s) => s.difficulty === 'Medium') || { count: 0 };
+        const hardItem = subList.find((s) => s.difficulty === 'Hard') || { count: 0 };
+
+        return {
+          username: mu.username || username,
+          realName: mu.profile?.realName || mu.username || username,
+          avatar: mu.profile?.userAvatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${username}`,
+          totalSolved: allItem.count || 0,
+          easySolved: easyItem.count || 0,
+          mediumSolved: mediumItem.count || 0,
+          hardSolved: hardItem.count || 0,
+          ranking: typeof mu.profile?.ranking === 'number' ? mu.profile.ranking.toLocaleString() : (mu.profile?.ranking || 'Unranked'),
+          reputation: mu.profile?.reputation || 0,
+          recentSubmissions: Array.isArray(data.data.recentSubmissionList) ? data.data.recentSubmissionList.slice(0, 20) : [],
+          isFallback: false,
+        };
+      } else if (data?.errors) {
+        const notFound = data.errors.some((e) => 
+          e.message?.toLowerCase().includes('not exist') || e.message?.toLowerCase().includes('not found')
+        );
+        if (notFound) {
+          throw new Error(`LeetCode user "@${username}" not found. Please verify your profile URL or username.`);
+        }
+      }
+    }
+  } catch (proxyErr) {
+    if (proxyErr.message && proxyErr.message.includes('not found')) {
+      throw proxyErr;
+    }
+    // Fallback to public endpoints below
+  }
+
+  // Strategy 2: Fast Public REST API Endpoints with generous fallback
   const endpoints = [
-    `https://alfa-leetcode-api.onrender.com/userProfile/${encodeURIComponent(username)}`,
     `https://leetcode-api-faisalshohag.vercel.app/${encodeURIComponent(username)}`,
+    `https://alfa-leetcode-api.onrender.com/userProfile/${encodeURIComponent(username)}`,
   ];
 
   let rawData = null;
@@ -40,7 +123,7 @@ export async function fetchLeetCodeStats(input) {
   for (const url of endpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
 

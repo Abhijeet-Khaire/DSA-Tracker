@@ -70,6 +70,8 @@ export function DataProvider({ children }) {
   );
 
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [firestoreSyncStatus, setFirestoreSyncStatus] = useState('syncing'); // 'synced' | 'syncing' | 'permission_error' | 'offline'
+  const [firestoreErrorDetails, setFirestoreErrorDetails] = useState(null);
   const [newlyUnlocked, setNewlyUnlocked] = useState(null);
   const [activeXpReward, setActiveXpReward] = useState(null);
   const xpTimerRef = useRef(null);
@@ -254,6 +256,8 @@ export function DataProvider({ children }) {
             localStorage.setItem(userTasksKey, JSON.stringify(cleanTasks));
           }
         }
+        setFirestoreSyncStatus('synced');
+        setFirestoreErrorDetails(null);
       } else {
         // Initialize brand new user record in Firestore
         const defaultProf = {
@@ -288,19 +292,29 @@ export function DataProvider({ children }) {
         };
         try {
           await setDoc(userDocRef, initialUserData, { merge: true });
+          setFirestoreSyncStatus('synced');
+          setFirestoreErrorDetails(null);
         } catch (err) {
           console.error('Error creating user profile in Firestore:', err);
+          const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+          setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+          setFirestoreErrorDetails(err.message);
         }
       }
       setIsLoadingData(false);
     }, (err) => {
       console.error('Firestore user profile snapshot error:', err);
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
       setIsLoadingData(false);
     });
 
     // 2. Authoritative User Problems Subcollection Sync (/users/{uid}/problems)
     const probCollectionRef = collection(userDocRef, 'problems');
     const probUnsub = onSnapshot(probCollectionRef, (snap) => {
+      setFirestoreSyncStatus('synced');
+      setFirestoreErrorDetails(null);
       const list = [];
       snap.forEach((d) => {
         if (DEMO_PROBLEM_IDS.includes(d.id)) {
@@ -315,11 +329,16 @@ export function DataProvider({ children }) {
       localStorage.setItem(userProbsKey, JSON.stringify(list));
     }, (err) => {
       console.error('Firestore problems snapshot error:', err);
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
     });
 
     // 3. Authoritative User Tasks Subcollection Sync (/users/{uid}/tasks)
     const taskCollectionRef = collection(userDocRef, 'tasks');
     const taskUnsub = onSnapshot(taskCollectionRef, (snap) => {
+      setFirestoreSyncStatus('synced');
+      setFirestoreErrorDetails(null);
       const list = [];
       snap.forEach((d) => {
         if (DEMO_TASK_IDS.includes(d.id)) {
@@ -334,6 +353,9 @@ export function DataProvider({ children }) {
       localStorage.setItem(userTasksKey, JSON.stringify(list));
     }, (err) => {
       console.error('Firestore tasks snapshot error:', err);
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
     });
 
     // Cleanup listeners when switching accounts or logging out
@@ -442,8 +464,39 @@ export function DataProvider({ children }) {
 
     try {
       await setDoc(doc(db, 'users', currentUser.uid), fullPayload, { merge: true });
+      setFirestoreSyncStatus('synced');
+      setFirestoreErrorDetails(null);
     } catch (err) {
       console.error('Error syncing complete user record to Firestore:', err);
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
+    }
+  };
+
+  // Explicit health check function to test Firestore write and rule permissions
+  const testFirestoreConnection = async () => {
+    if (!currentUser) return { success: false, message: 'Please log in to verify database connection.' };
+    setFirestoreSyncStatus('syncing');
+    try {
+      const testRef = doc(db, 'users', currentUser.uid);
+      await setDoc(testRef, {
+        lastHealthCheck: new Date().toISOString(),
+      }, { merge: true });
+      setFirestoreSyncStatus('synced');
+      setFirestoreErrorDetails(null);
+      return { success: true, message: 'Connected to Firestore! Cloud database is working properly.' };
+    } catch (err) {
+      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+      setFirestoreErrorDetails(err.message);
+      return {
+        success: false,
+        isPermissionError: isPerm,
+        message: isPerm
+          ? 'Firestore rejected the write request: "Missing or insufficient permissions". Your Firebase project rules are blocking writes.'
+          : err.message,
+      };
     }
   };
 
@@ -1137,6 +1190,9 @@ export function DataProvider({ children }) {
     purgeDemoData,
     clearUserData,
     importUserData,
+    firestoreSyncStatus,
+    firestoreErrorDetails,
+    testFirestoreConnection,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

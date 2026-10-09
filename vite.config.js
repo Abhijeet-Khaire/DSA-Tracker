@@ -16,5 +16,16 @@ export default defineConfig({
     port: 3000,
     host: true,
     open: false,
+    proxy: {
+      '/api/leetcode-graphql': {
+        target: 'https://leetcode.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/leetcode-graphql/, '/graphql'),
+        headers: {
+          Referer: 'https://leetcode.com',
+          Origin: 'https://leetcode.com',
+        },
+      },
+    },
   },
 });
