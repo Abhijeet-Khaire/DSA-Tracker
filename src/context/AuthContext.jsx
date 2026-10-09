@@ -46,21 +46,33 @@ export function AuthProvider({ children }) {
           const userDocRef = doc(db, 'users', user.uid);
           const snap = await getDoc(userDocRef);
           if (!snap.exists()) {
+            const defaultProfile = {
+              bio: 'DSA & System Design Enthusiast',
+              targetRole: 'Software Engineer',
+              leetcodeUsername: '',
+              githubUsername: '',
+            };
             await setDoc(userDocRef, {
               uid: user.uid,
               email: user.email || '',
               displayName: user.displayName || user.email?.split('@')[0] || 'Member',
               photoURL: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+              userInfo: {
+                profile: defaultProfile,
+                xp: 0,
+                streak: 0,
+                badges: [],
+                roadmap: {},
+              },
+              problems: [],
+              tasks: [],
+              profile: defaultProfile,
               xp: 0,
+              streak: 0,
+              badges: [],
               unlockedAchievements: [],
               dailyLogs: {},
               roadmapProgress: {},
-              profile: {
-                bio: 'DSA & System Design Enthusiast',
-                targetRole: 'Software Engineer',
-                leetcodeUsername: '',
-                githubUsername: '',
-              },
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             }, { merge: true });
@@ -97,22 +109,34 @@ export function AuthProvider({ children }) {
 
       // Initialize the user's document directly inside /users/{uid} in database
       try {
+        const defaultProfile = {
+          bio: 'DSA & System Design Enthusiast',
+          targetRole: 'Software Engineer',
+          leetcodeUsername: '',
+          githubUsername: '',
+        };
         const userDocRef = doc(db, 'users', user.uid);
         await setDoc(userDocRef, {
           uid: user.uid,
           email: user.email || email,
           displayName: displayName || user.displayName || email.split('@')[0],
           photoURL: user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+          userInfo: {
+            profile: defaultProfile,
+            xp: 0,
+            streak: 0,
+            badges: [],
+            roadmap: {},
+          },
+          problems: [],
+          tasks: [],
+          profile: defaultProfile,
           xp: 0,
+          streak: 0,
+          badges: [],
           unlockedAchievements: [],
           dailyLogs: {},
           roadmapProgress: {},
-          profile: {
-            bio: 'DSA & System Design Enthusiast',
-            targetRole: 'Software Engineer',
-            leetcodeUsername: '',
-            githubUsername: '',
-          },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }, { merge: true });

@@ -147,51 +147,85 @@ export function DataProvider({ children }) {
     // Setup Realtime Firestore Listeners for this specific user
     const userDocRef = doc(db, 'users', currentUid);
 
-    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile, Roadmap Progress)
+    // 1. User Profile Document Sync (XP, Achievements, Daily Logs, Profile, Roadmap Progress, Problems, Tasks)
     const userDocUnsub = onSnapshot(userDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.xp !== undefined) {
-          setXp(data.xp);
-          localStorage.setItem(userXpKey, String(data.xp));
+
+        // Extract from data.userInfo or direct fields
+        const userXp = data.userInfo?.xp !== undefined ? data.userInfo.xp : data.xp;
+        if (userXp !== undefined) {
+          setXp(userXp);
+          localStorage.setItem(userXpKey, String(userXp));
         }
-        if (data.unlockedAchievements !== undefined) {
-          setUnlockedAchievements(data.unlockedAchievements);
-          localStorage.setItem(userAchKey, JSON.stringify(data.unlockedAchievements));
+
+        const userBadges = data.userInfo?.badges || data.badges || data.unlockedAchievements;
+        if (userBadges !== undefined) {
+          setUnlockedAchievements(userBadges);
+          localStorage.setItem(userAchKey, JSON.stringify(userBadges));
         }
+
+        const userRoadmap = data.userInfo?.roadmap || data.roadmap || data.roadmapProgress;
+        if (userRoadmap !== undefined) {
+          setRoadmapProgress(userRoadmap);
+          localStorage.setItem(userRoadmapKey, JSON.stringify(userRoadmap));
+        }
+
+        const userProf = data.userInfo?.profile || data.profile;
+        if (userProf !== undefined) {
+          setUserProfile(userProf);
+          localStorage.setItem(userProfileKey, JSON.stringify(userProf));
+        }
+
         if (data.dailyLogs !== undefined) {
           setDailyLogs(data.dailyLogs);
           localStorage.setItem(userLogsKey, JSON.stringify(data.dailyLogs));
         }
-        if (data.roadmapProgress !== undefined) {
-          setRoadmapProgress(data.roadmapProgress);
-          localStorage.setItem(userRoadmapKey, JSON.stringify(data.roadmapProgress));
+
+        // If direct arrays exist on document, sync them if local state is empty
+        if (Array.isArray(data.problems) && data.problems.length > 0) {
+          setProblems((prev) => (prev.length === 0 ? data.problems : prev));
+          localStorage.setItem(userProbsKey, JSON.stringify(data.problems));
         }
-        if (data.profile !== undefined) {
-          setUserProfile(data.profile);
-          localStorage.setItem(userProfileKey, JSON.stringify(data.profile));
+
+        if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+          setTasks((prev) => (prev.length === 0 ? data.tasks : prev));
+          localStorage.setItem(userTasksKey, JSON.stringify(data.tasks));
         }
       } else {
         // Initialize brand new user record in Firestore
+        const defaultProf = {
+          bio: 'Data Structures & Algorithms Enthusiast',
+          targetRole: 'Software Engineer',
+          leetcodeUsername: '',
+          githubUsername: '',
+        };
         const initialUserData = {
           email: currentUser.email || '',
           displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Member',
           photoURL: currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-          xp: 0,
-          unlockedAchievements: [],
-          dailyLogs: {},
-          roadmapProgress: {},
-          profile: {
-            bio: 'Data Structures & Algorithms Enthusiast',
-            targetRole: 'Software Engineer',
-            leetcodeUsername: '',
-            githubUsername: '',
+          userInfo: {
+            profile: defaultProf,
+            xp: 0,
+            streak: 0,
+            badges: [],
+            roadmap: {},
           },
+          problems: [],
+          tasks: [],
+          profile: defaultProf,
+          xp: 0,
+          streak: 0,
+          badges: [],
+          unlockedAchievements: [],
+          roadmap: {},
+          roadmapProgress: {},
+          dailyLogs: {},
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         try {
-          await setDoc(userDocRef, initialUserData);
+          await setDoc(userDocRef, initialUserData, { merge: true });
         } catch (err) {
           console.error('Error creating user profile in Firestore:', err);
         }
@@ -245,6 +279,89 @@ export function DataProvider({ children }) {
     }
   }, [problems, tasks, dailyLogs, xp, unlockedAchievements, roadmapProgress, userProfile, isDemoMode]);
 
+  // Calculate streak from daily logs
+  const calculateStreak = () => {
+    let streak = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateStr = format(d, 'yyyy-MM-dd');
+      const log = dailyLogs[dateStr];
+
+      if (log && log.activeDay && (log.problemsSolved > 0 || log.tasksCompleted > 0)) {
+        streak++;
+      } else if (i === 0) {
+        // Today might not have activity yet, keep checking from yesterday
+        continue;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  };
+
+  // Central helper to persist the complete user document hierarchy in Firestore:
+  // users > {uid} > userInfo(profile, xp, streak, badges, roadmap) > problems & tasks
+  const syncUserToFirestore = async (overrides = {}) => {
+    if (!currentUser || isDemoMode) return;
+
+    const currentStreak = calculateStreak();
+    const finalProfile = overrides.userProfile !== undefined ? overrides.userProfile : userProfile;
+    const finalXp = overrides.xp !== undefined ? overrides.xp : xp;
+    const finalStreak = overrides.streak !== undefined ? overrides.streak : currentStreak;
+    const finalBadges = overrides.unlockedAchievements !== undefined ? overrides.unlockedAchievements : (Array.isArray(overrides.badges) ? overrides.badges : unlockedAchievements);
+    const finalRoadmap = overrides.roadmapProgress !== undefined ? overrides.roadmapProgress : (overrides.roadmap !== undefined ? overrides.roadmap : roadmapProgress);
+    const finalProblems = overrides.problems !== undefined ? overrides.problems : problems;
+    const finalTasks = overrides.tasks !== undefined ? overrides.tasks : tasks;
+    const finalDailyLogs = overrides.dailyLogs !== undefined ? overrides.dailyLogs : dailyLogs;
+
+    const fullPayload = {
+      uid: currentUser.uid,
+      email: currentUser.email || '',
+      displayName: currentUser.displayName || finalProfile?.displayName || 'Member',
+      photoURL: currentUser.photoURL || '',
+
+      // 1. users > user info(profile, xp, streak, badges, roadmap)
+      userInfo: {
+        profile: finalProfile,
+        xp: finalXp,
+        streak: finalStreak,
+        badges: finalBadges,
+        roadmap: finalRoadmap,
+      },
+
+      // 2. problems and tasks all information directly visible in database
+      problems: finalProblems,
+      tasks: finalTasks,
+
+      // 3. Direct top-level fields for maximum visibility in Firestore console
+      profile: finalProfile,
+      xp: finalXp,
+      streak: finalStreak,
+      badges: finalBadges,
+      unlockedAchievements: finalBadges,
+      roadmap: finalRoadmap,
+      roadmapProgress: finalRoadmap,
+      dailyLogs: finalDailyLogs,
+
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), fullPayload, { merge: true });
+    } catch (err) {
+      console.error('Error syncing complete user record to Firestore:', err);
+    }
+  };
+
+  // Automatic initial backfill and sync to Firestore when authenticated
+  useEffect(() => {
+    if (currentUser && !isDemoMode && !isLoadingData) {
+      syncUserToFirestore();
+    }
+  }, [currentUser, isDemoMode, isLoadingData]);
+
   // Check achievements unlock
   const checkAchievements = async (currentProblems, currentTasks, currentStreak) => {
     const solvedCount = currentProblems.filter(p => p.status === 'solved').length;
@@ -274,17 +391,7 @@ export function DataProvider({ children }) {
       setUnlockedAchievements(updatedAchievements);
       addXp(newlyEarned.xpReward, `Achievement: ${newlyEarned.title}`);
       setNewlyUnlocked(newlyEarned);
-
-      if (currentUser && !isDemoMode) {
-        try {
-          await setDoc(doc(db, 'users', currentUser.uid), {
-            unlockedAchievements: updatedAchievements,
-            updatedAt: new Date().toISOString(),
-          }, { merge: true });
-        } catch (err) {
-          console.error('Error updating achievements in Firestore:', err);
-        }
-      }
+      syncUserToFirestore({ unlockedAchievements: updatedAchievements });
     }
   };
 
@@ -317,14 +424,7 @@ export function DataProvider({ children }) {
     }
 
     if (currentUser && !isDemoMode) {
-      try {
-        await setDoc(doc(db, 'users', currentUser.uid), {
-          xp: nextXp,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (err) {
-        console.error('Error updating XP in Firestore:', err);
-      }
+      syncUserToFirestore({ xp: nextXp });
     }
   };
 
@@ -355,14 +455,7 @@ export function DataProvider({ children }) {
     localStorage.setItem(userLogsKey, JSON.stringify(nextLogs));
 
     if (currentUser && !isDemoMode) {
-      try {
-        await setDoc(doc(db, 'users', currentUser.uid), {
-          dailyLogs: nextLogs,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (err) {
-        console.error('Error saving dailyLogs to Firestore:', err);
-      }
+      syncUserToFirestore({ dailyLogs: nextLogs });
     }
   };
 
@@ -380,22 +473,24 @@ export function DataProvider({ children }) {
 
     setProblems((prev) => [newProb, ...prev]);
 
+    let addedXp = 0;
     if (newProb.status === 'solved') {
-      const reward = newProb.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
-                     newProb.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
-      addXp(reward, `${newProb.difficulty} Problem Solved`);
-      recordDailyActivity('problem', 1, reward);
+      addedXp = newProb.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                newProb.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+      addXp(addedXp, `${newProb.difficulty} Problem Solved`);
+      recordDailyActivity('problem', 1, addedXp);
     }
 
     if (currentUser && !isDemoMode) {
       try {
         await setDoc(doc(db, 'users', currentUser.uid, 'problems', newProb.id), newProb);
       } catch (err) {
-        console.error('Error saving problem to Firestore:', err);
+        console.error('Error saving problem to Firestore subcollection:', err);
       }
     }
 
-    checkAchievements([newProb, ...problems], tasks, calculateStreak());
+    syncUserToFirestore({ problems: nextProblems, ...(addedXp > 0 ? { xp: xp + addedXp } : {}) });
+    checkAchievements(nextProblems, tasks, calculateStreak());
   };
 
   const updateProblem = async (id, updates) => {
@@ -455,10 +550,17 @@ export function DataProvider({ children }) {
         console.error('Error updating problem in Firestore:', err);
       }
     }
+
+    syncUserToFirestore({ problems: nextProblems, ...(xpReward !== 0 ? { xp: Math.max(0, xp + xpReward) } : {}) });
   };
 
   const deleteProblem = async (id) => {
-    setProblems((prev) => prev.filter((p) => p.id !== id));
+    const nextProblems = problems.filter((p) => p.id !== id);
+    setProblems(nextProblems);
+
+    const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+    localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
+
     if (currentUser && !isDemoMode) {
       try {
         await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', id));
@@ -466,14 +568,17 @@ export function DataProvider({ children }) {
         console.error('Error deleting problem from Firestore:', err);
       }
     }
+
+    syncUserToFirestore({ problems: nextProblems });
   };
 
   const completeRevision = async (id) => {
     let updatedDate = null;
     let nextCount = 0;
+    let nextProblems = [];
 
-    setProblems((prev) =>
-      prev.map((p) => {
+    setProblems((prev) => {
+      nextProblems = prev.map((p) => {
         if (p.id === id) {
           nextCount = (p.revisionCount || 0) + 1;
           updatedDate = getNextRevisionDate(new Date(), nextCount);
@@ -484,23 +589,29 @@ export function DataProvider({ children }) {
           };
         }
         return p;
-      })
-    );
+      });
+      return nextProblems;
+    });
+
+    const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
+    localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
     addXp(XP_REWARDS.PROBLEM_REVISION, 'Spaced Revision Completed');
     recordDailyActivity('problem', 0, XP_REWARDS.PROBLEM_REVISION);
 
     if (currentUser && !isDemoMode) {
       try {
-        await updateDoc(doc(db, 'users', currentUser.uid, 'problems', id), {
+        await setDoc(doc(db, 'users', currentUser.uid, 'problems', id), {
           revisionCount: nextCount,
           revisionDate: updatedDate,
           updatedAt: new Date().toISOString(),
-        });
+        }, { merge: true });
       } catch (err) {
         console.error('Error updating revision in Firestore:', err);
       }
     }
+
+    syncUserToFirestore({ problems: nextProblems, xp: xp + XP_REWARDS.PROBLEM_REVISION });
   };
 
   // Task actions (stored under /users/{uid}/tasks/{taskId})
@@ -525,6 +636,8 @@ export function DataProvider({ children }) {
         console.error('Error adding task to Firestore:', err);
       }
     }
+
+    syncUserToFirestore({ tasks: nextTasks });
   };
 
   const toggleTask = async (id) => {
@@ -576,7 +689,13 @@ export function DataProvider({ children }) {
       }
     }
 
-    checkAchievements(problems, nextTasks, calculateStreak());
+    const currentStreak = calculateStreak();
+    checkAchievements(problems, nextTasks, currentStreak);
+    syncUserToFirestore({
+      tasks: nextTasks,
+      streak: currentStreak,
+      xp: Math.max(0, xp + (!wasDone ? XP_REWARDS.TASK_COMPLETE : -XP_REWARDS.TASK_COMPLETE)),
+    });
   };
 
   const deleteTask = async (id) => {
@@ -602,10 +721,22 @@ export function DataProvider({ children }) {
         console.error('Error deleting task from Firestore:', err);
       }
     }
+
+    syncUserToFirestore({
+      tasks: nextTasks,
+      ...(taskToDelete && taskToDelete.status === 'done' ? { xp: Math.max(0, xp - XP_REWARDS.TASK_COMPLETE) } : {})
+    });
   };
 
   // Load curated starter pack into user's account
   const loadStarterData = async () => {
+    const initialLogs = generateInitialDailyLogs();
+    setProblems(INITIAL_PROBLEMS);
+    setTasks(INITIAL_TASKS);
+    setDailyLogs(initialLogs);
+    setXp(420);
+    setUnlockedAchievements(['first_solve', 'streak_3']);
+
     if (currentUser && !isDemoMode) {
       for (const prob of INITIAL_PROBLEMS) {
         await setDoc(doc(db, 'users', currentUser.uid, 'problems', prob.id), prob);
@@ -613,43 +744,42 @@ export function DataProvider({ children }) {
       for (const task of INITIAL_TASKS) {
         await setDoc(doc(db, 'users', currentUser.uid, 'tasks', task.id), task);
       }
-      const initialLogs = generateInitialDailyLogs();
-      await setDoc(doc(db, 'users', currentUser.uid), {
+      syncUserToFirestore({
+        problems: INITIAL_PROBLEMS,
+        tasks: INITIAL_TASKS,
         dailyLogs: initialLogs,
         xp: 420,
         unlockedAchievements: ['first_solve', 'streak_3'],
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-    } else {
-      setProblems(INITIAL_PROBLEMS);
-      setTasks(INITIAL_TASKS);
-      setDailyLogs(generateInitialDailyLogs());
-      setXp(420);
-      setUnlockedAchievements(['first_solve', 'streak_3']);
+      });
     }
   };
 
   // Clear/Reset all data for current user
   const clearUserData = async () => {
+    const prevProblems = [...problems];
+    const prevTasks = [...tasks];
+
+    setProblems([]);
+    setTasks([]);
+    setDailyLogs({});
+    setXp(0);
+    setUnlockedAchievements([]);
+
     if (currentUser && !isDemoMode) {
-      for (const p of problems) {
+      for (const p of prevProblems) {
         await deleteDoc(doc(db, 'users', currentUser.uid, 'problems', p.id));
       }
-      for (const t of tasks) {
+      for (const t of prevTasks) {
         await deleteDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id));
       }
-      await setDoc(doc(db, 'users', currentUser.uid), {
+      syncUserToFirestore({
+        problems: [],
+        tasks: [],
+        dailyLogs: {},
         xp: 0,
         unlockedAchievements: [],
-        dailyLogs: {},
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-    } else {
-      setProblems([]);
-      setTasks([]);
-      setDailyLogs({});
-      setXp(0);
-      setUnlockedAchievements([]);
+        streak: 0,
+      });
     }
   };
 
@@ -689,12 +819,13 @@ export function DataProvider({ children }) {
       for (const t of newTasks) {
         await setDoc(doc(db, 'users', currentUser.uid, 'tasks', t.id), t);
       }
-      await setDoc(doc(db, 'users', currentUser.uid), {
-        xp: newXp,
+      syncUserToFirestore({
+        problems: newProblems,
+        tasks: newTasks,
         dailyLogs: newLogs,
+        xp: newXp,
         unlockedAchievements: newAch,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      });
     }
   };
 
@@ -710,14 +841,7 @@ export function DataProvider({ children }) {
     localStorage.setItem(roadmapKey, JSON.stringify(updated));
 
     if (currentUser && !isDemoMode) {
-      try {
-        await setDoc(doc(db, 'users', currentUser.uid), {
-          roadmapProgress: updated,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (err) {
-        console.error('Error saving roadmap progress to Firestore:', err);
-      }
+      syncUserToFirestore({ roadmapProgress: updated });
     }
   };
 
@@ -733,39 +857,8 @@ export function DataProvider({ children }) {
     localStorage.setItem(profileKey, JSON.stringify(updated));
 
     if (currentUser && !isDemoMode) {
-      try {
-        await setDoc(doc(db, 'users', currentUser.uid), {
-          profile: updated,
-          ...(profileUpdates.displayName ? { displayName: profileUpdates.displayName } : {}),
-          ...(profileUpdates.photoURL ? { photoURL: profileUpdates.photoURL } : {}),
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (err) {
-        console.error('Error saving user profile to Firestore:', err);
-      }
+      syncUserToFirestore({ userProfile: updated });
     }
-  };
-
-  // Calculate streak from daily logs
-  const calculateStreak = () => {
-    let streak = 0;
-    const today = new Date();
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateStr = format(d, 'yyyy-MM-dd');
-      const log = dailyLogs[dateStr];
-
-      if (log && log.activeDay && (log.problemsSolved > 0 || log.tasksCompleted > 0)) {
-        streak++;
-      } else if (i === 0) {
-        // Today might not have activity yet, keep checking from yesterday
-        continue;
-      } else {
-        break;
-      }
-    }
-    return streak;
   };
 
   const levelInfo = calculateLevel(xp);
