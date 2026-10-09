@@ -10,7 +10,7 @@ import TopicProgressChart from '../components/dsa/TopicProgressChart';
 import DifficultyChart from '../components/dsa/DifficultyChart';
 import MotionButton from '../components/motion/MotionButton';
 import AnimatedCounter from '../components/motion/AnimatedCounter';
-import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck } from 'lucide-react';
+import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck, Cpu } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
 

@@ -95,25 +95,24 @@ export async function fetchLeetCodeStats(input) {
           recentSubmissions: Array.isArray(data.data.recentSubmissionList) ? data.data.recentSubmissionList.slice(0, 20) : [],
           isFallback: false,
         };
-      } else if (data?.errors) {
-        const notFound = data.errors.some((e) => 
-          e.message?.toLowerCase().includes('not exist') || e.message?.toLowerCase().includes('not found')
-        );
-        if (notFound) {
-          throw new Error(`LeetCode user "@${username}" not found. Please verify your profile URL or username.`);
-        }
+      }
+
+      // User not found in GraphQL response
+      if (data?.data?.matchedUser === null || data?.errors) {
+        throw new Error(`LeetCode user "@${username}" not found. Please verify your profile URL or username.`);
       }
     }
   } catch (proxyErr) {
-    if (proxyErr.message && proxyErr.message.includes('not found')) {
+    if (proxyErr.message && (proxyErr.message.includes('not found') || proxyErr.message.includes('not exist'))) {
       throw proxyErr;
     }
     // Fallback to public endpoints below
   }
 
-  // Strategy 2: Fast Public REST API Endpoints with generous fallback
+  // Strategy 2: Fast Public REST API Endpoints with resilient fallback
   const endpoints = [
     `https://leetcode-api-faisalshohag.vercel.app/${encodeURIComponent(username)}`,
+    `https://leetcode-stats-api.herokuapp.com/${encodeURIComponent(username)}`,
     `https://alfa-leetcode-api.onrender.com/userProfile/${encodeURIComponent(username)}`,
   ];
 
@@ -123,7 +122,7 @@ export async function fetchLeetCodeStats(input) {
   for (const url of endpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -133,6 +132,7 @@ export async function fetchLeetCodeStats(input) {
       if (
         data &&
         (data.errors ||
+          data.status === 'error' ||
           data.message === 'user does not exist' ||
           (data.matchedUser === null && data.totalSolved === undefined))
       ) {
@@ -144,7 +144,7 @@ export async function fetchLeetCodeStats(input) {
         break;
       }
     } catch (err) {
-      if (err.message && err.message.includes('not found')) {
+      if (err.message && (err.message.includes('not found') || err.message.includes('not exist'))) {
         throw err;
       }
       lastError = err;
@@ -153,7 +153,7 @@ export async function fetchLeetCodeStats(input) {
 
   if (!rawData) {
     throw new Error(
-      lastError?.message?.includes('not found')
+      lastError?.message && (lastError.message.includes('not found') || lastError.message.includes('not exist'))
         ? lastError.message
         : `Could not fetch LeetCode profile for "@${username}". Please verify your profile URL and ensure your profile is public.`
     );
