@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { CURATED_ROADMAPS } from '../../lib/curatedRoadmaps';
 import { useData } from '../../context/DataContext';
@@ -212,35 +212,51 @@ export default function RoadmapTracker() {
 
       {/* Week Filters for 30-Day Roadmaps */}
       {activeRoadmap.weeks && (
-        <div className="flex flex-wrap items-center gap-2 pb-1">
-          <button
-            onClick={() => setSelectedWeek('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedWeek === 'all'
-                ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            All 30 Days
-          </button>
-          {activeRoadmap.weeks.map((week) => {
-            const isSelected = selectedWeek === week.weekNumber;
-            return (
-              <button
-                key={week.weekNumber}
-                onClick={() => setSelectedWeek(week.weekNumber)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-white shadow-md'
-                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span>{week.icon}</span>
-                <span>Week {week.weekNumber}</span>
-              </button>
-            );
-          })}
-        </div>
+        <LayoutGroup id="roadmapWeekNav">
+          <div className="flex flex-wrap items-center gap-2 pb-1">
+            <button
+              onClick={() => setSelectedWeek('all')}
+              className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer select-none ${
+                selectedWeek === 'all'
+                  ? 'text-white'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {selectedWeek === 'all' && (
+                <motion.div
+                  layoutId={prefersReduced ? undefined : "roadmapWeekActivePill"}
+                  transition={SPRING_SMOOTH}
+                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md shadow-cyan-500/25 -z-0"
+                />
+              )}
+              <span className="relative z-10">All 30 Days</span>
+            </button>
+            {activeRoadmap.weeks.map((week) => {
+              const isSelected = selectedWeek === week.weekNumber;
+              return (
+                <button
+                  key={week.weekNumber}
+                  onClick={() => setSelectedWeek(week.weekNumber)}
+                  className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 select-none ${
+                    isSelected
+                      ? 'text-white'
+                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isSelected && (
+                    <motion.div
+                      layoutId={prefersReduced ? undefined : "roadmapWeekActivePill"}
+                      transition={SPRING_SMOOTH}
+                      className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md shadow-cyan-500/25 -z-0"
+                    />
+                  )}
+                  <span className="relative z-10">{week.icon}</span>
+                  <span className="relative z-10">Week {week.weekNumber}</span>
+                </button>
+              );
+            })}
+          </div>
+        </LayoutGroup>
       )}
 
       {/* Grid of Roadmap Items / Days */}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import { getRevisionStatus } from '../../lib/revisionEngine';
 import MotionButton from '../motion/MotionButton';
@@ -144,41 +144,38 @@ export default function TodayPanel() {
 
             {/* Quick Filter Tabs & Link */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setTaskFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                    taskFilter === 'all'
-                      ? 'bg-cyan-500 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  All ({tasks.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTaskFilter('pending')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                    taskFilter === 'pending'
-                      ? 'bg-cyan-500 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Pending ({pendingTasks.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTaskFilter('done')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                    taskFilter === 'done'
-                      ? 'bg-cyan-500 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Done ({doneTasks.length})
-                </button>
-              </div>
+              <LayoutGroup id="todayTaskFilterNav">
+                <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] relative">
+                  {[
+                    { id: 'all', label: `All (${tasks.length})` },
+                    { id: 'pending', label: `Pending (${pendingTasks.length})` },
+                    { id: 'done', label: `Done (${doneTasks.length})` },
+                  ].map((tab) => {
+                    const isActive = taskFilter === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setTaskFilter(tab.id)}
+                        className={`relative px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors cursor-pointer select-none ${
+                          isActive
+                            ? 'text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {isActive && (
+                          <motion.div
+                            layoutId={prefersReduced ? undefined : "todayTaskFilterActivePill"}
+                            transition={SPRING_SMOOTH}
+                            className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm shadow-cyan-500/30"
+                          />
+                        )}
+                        <span className="relative z-10">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </LayoutGroup>
 
               <Link
                 to="/tasks"

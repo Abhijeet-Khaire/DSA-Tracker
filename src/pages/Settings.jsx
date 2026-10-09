@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import MotionButton from '../components/motion/MotionButton';
@@ -265,37 +265,39 @@ export default function Settings() {
       </AnimatePresence>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto no-scrollbar">
-        {[
-          { id: 'study', label: 'Study & Daily Goals', icon: Target },
-          { id: 'guides', label: 'Spaced Repetition & XP Guide', icon: BrainCircuit },
-          { id: 'account', label: 'Account & Security', icon: User },
-          { id: 'data', label: 'Data & Backups', icon: Download },
-          { id: 'appearance', label: 'Accessibility & Sound', icon: Sliders },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId={reducedMotion ? undefined : "settingsActiveTab"}
-                  transition={SPRING_SMOOTH}
-                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
-                />
-              )}
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <LayoutGroup id="settingsNavTabs">
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'study', label: 'Study & Daily Goals', icon: Target },
+            { id: 'guides', label: 'Spaced Repetition & XP Guide', icon: BrainCircuit },
+            { id: 'account', label: 'Account & Security', icon: User },
+            { id: 'data', label: 'Data & Backups', icon: Download },
+            { id: 'appearance', label: 'Accessibility & Sound', icon: Sliders },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer select-none ${
+                  isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId={reducedMotion ? undefined : "settingsActiveTab"}
+                    transition={SPRING_SMOOTH}
+                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
+                  />
+                )}
+                <Icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </LayoutGroup>
 
       {/* TAB 1: Study & Daily Goals */}
       {activeTab === 'study' && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import ProblemList from '../components/dsa/ProblemList';
 import TopicProgressChart from '../components/dsa/TopicProgressChart';
@@ -43,39 +43,41 @@ export default function DSATracker() {
         </div>
 
         {/* Tab switcher buttons with layoutId sliding pill */}
-        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 shrink-0">
-          <button
-            onClick={() => setActiveTab('problems')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === 'problems' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {activeTab === 'problems' && (
-              <motion.div
-                layoutId={prefersReduced ? undefined : "dsaTabIndicator"}
-                transition={SPRING_SMOOTH}
-                className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
-              />
-            )}
-            <Layers className="w-4 h-4" /> My Problems
-          </button>
+        <LayoutGroup id="dsaTrackerTabs">
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 shrink-0">
+            <button
+              onClick={() => setActiveTab('problems')}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer select-none ${
+                activeTab === 'problems' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {activeTab === 'problems' && (
+                <motion.div
+                  layoutId={prefersReduced ? undefined : "dsaTabIndicator"}
+                  transition={SPRING_SMOOTH}
+                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
+                />
+              )}
+              <Layers className="w-4 h-4" /> My Problems
+            </button>
 
-          <button
-            onClick={() => setActiveTab('roadmaps')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === 'roadmaps' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {activeTab === 'roadmaps' && (
-              <motion.div
-                layoutId={prefersReduced ? undefined : "dsaTabIndicator"}
-                transition={SPRING_SMOOTH}
-                className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
-              />
-            )}
-            <BookMarked className="w-4 h-4" /> Curated Roadmaps
-          </button>
-        </div>
+            <button
+              onClick={() => setActiveTab('roadmaps')}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer select-none ${
+                activeTab === 'roadmaps' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {activeTab === 'roadmaps' && (
+                <motion.div
+                  layoutId={prefersReduced ? undefined : "dsaTabIndicator"}
+                  transition={SPRING_SMOOTH}
+                  className="absolute inset-0 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 shadow-md -z-10"
+                />
+              )}
+              <BookMarked className="w-4 h-4" /> Curated Roadmaps
+            </button>
+          </div>
+        </LayoutGroup>
       </div>
 
       <AnimatePresence mode="wait">

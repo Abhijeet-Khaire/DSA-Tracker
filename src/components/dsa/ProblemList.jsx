@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import { getRevisionStatus } from '../../lib/revisionEngine';
 import ProblemForm from './ProblemForm';
@@ -63,16 +63,38 @@ export default function ProblemList() {
 
         {/* Filters & Add Button */}
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
-          >
-            <option value="all">All Statuses</option>
-            <option value="todo">To Do</option>
-            <option value="attempted">Attempted</option>
-            <option value="solved">Solved</option>
-          </select>
+          {/* Status Segmented Tabs with Sliding Pill */}
+          <LayoutGroup id="problemStatusNav">
+            <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'todo', label: 'To Do' },
+                { id: 'attempted', label: 'Attempted' },
+                { id: 'solved', label: 'Solved' },
+              ].map((tab) => {
+                const isActive = statusFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.id)}
+                    className={`relative px-2.5 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer select-none ${
+                      isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId={prefersReduced ? undefined : "problemStatusActivePill"}
+                        transition={SPRING_SMOOTH}
+                        className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm shadow-cyan-500/30"
+                      />
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
 
           <select
             value={difficultyFilter}

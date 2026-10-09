@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { useData } from '../../context/DataContext';
 import TaskForm from './TaskForm';
 import LottieWrapper from '../shared/LottieWrapper';
@@ -30,6 +30,38 @@ export default function TaskList() {
       <div className="p-4 rounded-2xl glass-panel bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          {/* Status Filter Tabs with sliding pill */}
+          <LayoutGroup id="taskListStatusNav">
+            <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+              {[
+                { id: 'all', label: `All (${tasks.length})` },
+                { id: 'pending', label: `Pending (${tasks.filter((t) => t.status === 'pending').length})` },
+                { id: 'done', label: `Done (${tasks.filter((t) => t.status === 'done').length})` },
+              ].map((tab) => {
+                const isActive = statusFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.id)}
+                    className={`relative px-3 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer select-none ${
+                      isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId={prefersReduced ? undefined : "taskListStatusActivePill"}
+                        transition={SPRING_SMOOTH}
+                        className="absolute inset-0 rounded-lg bg-cyan-500 shadow-sm shadow-cyan-500/30"
+                      />
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
+
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
@@ -42,16 +74,6 @@ export default function TaskList() {
             <option value="Fitness">Fitness</option>
             <option value="Reading">Reading</option>
             <option value="Misc">Misc</option>
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
-          >
-            <option value="all">All Tasks</option>
-            <option value="pending">Pending</option>
-            <option value="done">Completed</option>
           </select>
         </div>
 
