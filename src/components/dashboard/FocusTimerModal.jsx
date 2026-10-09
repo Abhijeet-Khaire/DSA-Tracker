@@ -53,6 +53,29 @@ export default function FocusTimerModal({ isOpen, onClose }) {
     }
   };
 
+  // Subtle mechanical split-flap click sound on each second flip
+  const playMechanicalTickSound = () => {
+    if (!soundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(200, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.02);
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.02);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.02);
+    } catch {
+      // AudioContext policy
+    }
+  };
+
   const handleSessionComplete = () => {
     setIsActive(false);
     setIsCompleted(true);
@@ -78,9 +101,17 @@ export default function FocusTimerModal({ isOpen, onClose }) {
         endTimeRef.current = Date.now() + timeLeft * 1000;
       }
 
+      let lastNotifiedSec = timeLeft;
+
       const tick = () => {
         const remainingMs = endTimeRef.current - Date.now();
         const remainingSecs = Math.max(0, Math.ceil(remainingMs / 1000));
+        
+        if (remainingSecs !== lastNotifiedSec) {
+          lastNotifiedSec = remainingSecs;
+          playMechanicalTickSound();
+        }
+
         setTimeLeft(remainingSecs);
 
         if (remainingSecs <= 0) {

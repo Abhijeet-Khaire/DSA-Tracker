@@ -14,7 +14,7 @@
   --flip-h: 98px;
   --flip-font-size: 64px;
   --flip-border-radius: 8px;
-  --flip-anim-duration: 480ms;
+  --flip-anim-duration: 420ms;
 }
 
 @media (min-width: 640px) {

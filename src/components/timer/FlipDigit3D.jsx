@@ -5,10 +5,16 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
   const [currentDigit, setCurrentDigit] = useState(digit);
   const [previousDigit, setPreviousDigit] = useState(digit);
   const [isFlipping, setIsFlipping] = useState(false);
-  const flipTimerRef = useRef(null);
+  const [flipCount, setFlipCount] = useState(0);
+  const prevDigitRef = useRef(digit);
+  const timerRef = useRef(null);
 
   useEffect(() => {
-    if (digit === currentDigit) return;
+    // Only trigger flip animation if digit actually changed
+    if (digit === prevDigitRef.current) return;
+
+    const oldDigit = prevDigitRef.current;
+    prevDigitRef.current = digit;
 
     if (prefersReduced) {
       setCurrentDigit(digit);
@@ -17,21 +23,22 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
       return;
     }
 
-    // Trigger true mechanical 2-phase split-flap transition
-    setPreviousDigit(currentDigit);
+    // Trigger mechanical split-flap animation cycle
+    setPreviousDigit(oldDigit);
     setCurrentDigit(digit);
     setIsFlipping(true);
+    setFlipCount((c) => c + 1);
 
-    if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
-    flipTimerRef.current = setTimeout(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
       setIsFlipping(false);
       setPreviousDigit(digit);
-    }, 480);
+    }, 420);
 
     return () => {
-      if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [digit, currentDigit, prefersReduced]);
+  }, [digit, prefersReduced]);
 
   return (
     <div className="flip-digit-module">
@@ -53,9 +60,9 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
         </div>
       </div>
 
-      {/* 3. Dynamic Animated Flaps (Active during 3D flip transition) */}
+      {/* 3. Dynamic Animated Flaps: Keyed by flipCount so fresh animations mount and play on each second */}
       {isFlipping && !prefersReduced && (
-        <>
+        <React.Fragment key={`flip-${flipCount}`}>
           {/* Top Flap: Shows previous digit upper half, swings down 0deg -> -90deg */}
           <div className="flip-plate flip-plate-top flip-flap-top-animated">
             <div className="flip-plate-bg" />
@@ -71,7 +78,7 @@ export default function FlipDigit3D({ digit, prefersReduced = false }) {
               <span className="flip-glyph">{currentDigit}</span>
             </div>
           </div>
-        </>
+        </React.Fragment>
       )}
 
       {/* 4. Physical Center Seam Gap */}
