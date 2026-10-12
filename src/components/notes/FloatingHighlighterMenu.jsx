@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MAC_HIGHLIGHT_COLORS } from './MacNotesEditor';
 import { Bold, Italic, Underline, Code, Eraser, Sparkles, Strikethrough } from 'lucide-react';
 
-export default function FloatingHighlighterMenu({ editorRef, onApplyHighlight, onApplyFormat }) {
+export default function FloatingHighlighterMenu({ editorRef, onApplyHighlight, onApplyFormat, onApplyInlineCode }) {
   const [menuPosition, setMenuPosition] = useState(null);
   const [visible, setVisible] = useState(false);
   const menuRef = useRef(null);
@@ -147,6 +147,20 @@ export default function FloatingHighlighterMenu({ editorRef, onApplyHighlight, o
           >
             <Strikethrough className="w-3.5 h-3.5" />
           </button>
+          {onApplyInlineCode && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onApplyInlineCode();
+                setVisible(false);
+              }}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-cyan-300 hover:text-white transition-colors cursor-pointer font-mono"
+              title="Inline Code (`code`)"
+            >
+              <Code className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* 5 macOS Glow Highlighter Color Swatches */}

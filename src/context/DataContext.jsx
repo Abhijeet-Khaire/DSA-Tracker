@@ -78,6 +78,7 @@ export function DataProvider({ children }) {
   const [newlyUnlocked, setNewlyUnlocked] = useState(null);
   const [activeXpReward, setActiveXpReward] = useState(null);
   const xpTimerRef = useRef(null);
+  const syncQueueRef = useRef(Promise.resolve());
 
   // Synchronous State Reference to prevent stale closures during concurrent Firestore writes
   const stateRef = useRef({
@@ -219,17 +220,27 @@ export function DataProvider({ children }) {
         // Extract from data.userInfo or direct fields
         const userXp = data.userInfo?.xp !== undefined ? data.userInfo.xp : data.xp;
         if (userXp !== undefined) {
-          setXp(userXp);
-          stateRef.current.xp = userXp;
-          localStorage.setItem(userXpKey, String(userXp));
+          const numXp = Number(userXp);
+          setXp(numXp);
+          stateRef.current.xp = numXp;
+          localStorage.setItem(userXpKey, String(numXp));
         }
 
-        const userBadges = data.userInfo?.badges || data.badges || data.unlockedAchievements;
-        if (userBadges !== undefined) {
-          setUnlockedAchievements(userBadges);
-          stateRef.current.unlockedAchievements = userBadges;
-          localStorage.setItem(userAchKey, JSON.stringify(userBadges));
-        }
+        const serverBadges = [
+          data.unlockedAchievements,
+          data.badges,
+          data.userInfo?.badges,
+        ].find((b) => Array.isArray(b) && b.length > 0) || (Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : (Array.isArray(data.userInfo?.badges) ? data.userInfo.badges : []));
+
+        // Merge with existing local achievements to guarantee badges are never lost
+        const mergedBadges = Array.from(new Set([
+          ...(stateRef.current.unlockedAchievements || []),
+          ...(serverBadges || []),
+        ]));
+
+        setUnlockedAchievements(mergedBadges);
+        stateRef.current.unlockedAchievements = mergedBadges;
+        localStorage.setItem(userAchKey, JSON.stringify(mergedBadges));
 
         const userRoadmap = data.userInfo?.roadmap || data.roadmap || data.roadmapProgress;
         if (userRoadmap !== undefined) {
@@ -486,10 +497,13 @@ export function DataProvider({ children }) {
   };
 
   // Recalculates streak from problems, tasks, logs, and repairs any broken log dates
+  // Recalculates streak from problems, tasks, logs, repairs any broken log dates, verifies achievements, and repairs XP
   const recalculateAndRepairStreak = async () => {
     const currLogs = { ...(stateRef.current.dailyLogs || {}) };
     const currProbs = stateRef.current.problems || [];
     const currTasks = stateRef.current.tasks || [];
+    const currNotes = stateRef.current.notes || [];
+    const currProfile = stateRef.current.userProfile || {};
 
     let hasRepaired = false;
 
@@ -535,12 +549,60 @@ export function DataProvider({ children }) {
     }
 
     const currentStreak = calculateStreak();
-    checkAchievements(currProbs, currTasks, currentStreak);
+
+    // Verify all achievements
+    await checkAchievements(currProbs, currTasks, currentStreak);
+
+    // Calculate baseline XP from valid solved problems, revisions, tasks, notes, and achievements
+    let totalSolvedXp = 0;
+    currProbs.forEach((p) => {
+      if (p.status === 'solved') {
+        totalSolvedXp += p.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                         p.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+      }
+      if ((p.revisionCount || 0) > 0) {
+        totalSolvedXp += (p.revisionCount || 0) * XP_REWARDS.PROBLEM_REVISION;
+      }
+    });
+
+    const activeTasksDone = currTasks.filter(t => t.status === 'done').length;
+    const logsTasksDone = Object.values(currLogs).reduce((acc, l) => acc + (l?.tasksCompleted || 0), 0);
+    const totalTasksDone = Math.max(activeTasksDone, logsTasksDone);
+    const totalTaskXp = totalTasksDone * XP_REWARDS.TASK_COMPLETE;
+    const totalNotesXp = currNotes.length * 15;
+
+    let totalAchXp = 0;
+    const unlocked = stateRef.current.unlockedAchievements || [];
+    ACHIEVEMENTS.forEach((a) => {
+      if (unlocked.includes(a.id)) {
+        totalAchXp += a.xpReward;
+      }
+    });
+
+    let leetcodeXp = 0;
+    if (currProfile.leetcodeStats) {
+      const stats = currProfile.leetcodeStats;
+      leetcodeXp = ((stats.easySolved || 0) * 15) + ((stats.mediumSolved || 0) * 30) + ((stats.hardSolved || 0) * 60);
+    }
+
+    const baselineCalculatedXp = Math.max(
+      totalSolvedXp + totalTaskXp + totalNotesXp + totalAchXp,
+      leetcodeXp + totalTaskXp + totalNotesXp + totalAchXp
+    );
+
+    // Ensure stateRef XP and local storage have accurate XP
+    const targetXp = Math.max(baselineCalculatedXp, stateRef.current.xp || 0);
+    stateRef.current.xp = targetXp;
+    setXp(targetXp);
+    const userXpKey = getStorageKey(currentUid, isDemoMode, 'xp');
+    localStorage.setItem(userXpKey, String(targetXp));
 
     if (currentUser && !isDemoMode) {
       await syncUserToFirestore({
         dailyLogs: currLogs,
         streak: currentStreak,
+        xp: targetXp,
+        unlockedAchievements: stateRef.current.unlockedAchievements,
       });
     }
 
@@ -565,7 +627,7 @@ export function DataProvider({ children }) {
     const finalNotes = overrides.notes !== undefined ? overrides.notes : curr.notes;
     const finalDailyLogs = overrides.dailyLogs !== undefined ? overrides.dailyLogs : curr.dailyLogs;
 
-    // Immediately keep stateRef in sync to avoid any race conditions
+    // Immediately keep stateRef in sync synchronously to prevent stale closures
     stateRef.current = {
       ...curr,
       userProfile: finalProfile,
@@ -578,49 +640,55 @@ export function DataProvider({ children }) {
       dailyLogs: finalDailyLogs,
     };
 
-    const fullPayload = {
-      uid: currentUser.uid,
-      email: currentUser.email || '',
-      displayName: currentUser.displayName || finalProfile?.displayName || 'Member',
-      photoURL: currentUser.photoURL || '',
+    // Serialize network writes through syncQueueRef to avoid race conditions
+    syncQueueRef.current = syncQueueRef.current.then(async () => {
+      const latest = stateRef.current;
+      const fullPayload = {
+        uid: currentUser.uid,
+        email: currentUser.email || '',
+        displayName: currentUser.displayName || latest.userProfile?.displayName || 'Member',
+        photoURL: currentUser.photoURL || '',
 
-      // 1. users > user info(profile, xp, streak, badges, roadmap)
-      userInfo: {
-        profile: finalProfile,
-        xp: finalXp,
-        streak: finalStreak,
-        badges: finalBadges,
-        roadmap: finalRoadmap,
-      },
+        // 1. users > user info(profile, xp, streak, badges, roadmap)
+        userInfo: {
+          profile: latest.userProfile,
+          xp: latest.xp,
+          streak: latest.streak || calculateStreak(),
+          badges: latest.unlockedAchievements,
+          roadmap: latest.roadmapProgress,
+        },
 
-      // 2. problems, tasks, and notes all information directly visible in database
-      problems: finalProblems,
-      tasks: finalTasks,
-      notes: finalNotes,
+        // 2. problems, tasks, and notes all information directly visible in database
+        problems: latest.problems,
+        tasks: latest.tasks,
+        notes: latest.notes,
 
-      // 3. Direct top-level fields for maximum visibility in Firestore console
-      profile: finalProfile,
-      xp: finalXp,
-      streak: finalStreak,
-      badges: finalBadges,
-      unlockedAchievements: finalBadges,
-      roadmap: finalRoadmap,
-      roadmapProgress: finalRoadmap,
-      dailyLogs: finalDailyLogs,
+        // 3. Direct top-level fields for maximum visibility in Firestore console
+        profile: latest.userProfile,
+        xp: latest.xp,
+        streak: latest.streak || calculateStreak(),
+        badges: latest.unlockedAchievements,
+        unlockedAchievements: latest.unlockedAchievements,
+        roadmap: latest.roadmapProgress,
+        roadmapProgress: latest.roadmapProgress,
+        dailyLogs: latest.dailyLogs,
 
-      updatedAt: new Date().toISOString(),
-    };
+        updatedAt: new Date().toISOString(),
+      };
 
-    try {
-      await setDoc(doc(db, 'users', currentUser.uid), fullPayload, { merge: true });
-      setFirestoreSyncStatus('synced');
-      setFirestoreErrorDetails(null);
-    } catch (err) {
-      console.error('Error syncing complete user record to Firestore:', err);
-      const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
-      setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
-      setFirestoreErrorDetails(err.message);
-    }
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid), fullPayload, { merge: true });
+        setFirestoreSyncStatus('synced');
+        setFirestoreErrorDetails(null);
+      } catch (err) {
+        console.error('Error syncing complete user record to Firestore:', err);
+        const isPerm = err.code === 'permission-denied' || err.message?.toLowerCase().includes('permission');
+        setFirestoreSyncStatus(isPerm ? 'permission_error' : 'offline');
+        setFirestoreErrorDetails(err.message);
+      }
+    });
+
+    return syncQueueRef.current;
   };
 
   // Explicit health check function to test Firestore write and rule permissions
@@ -651,11 +719,30 @@ export function DataProvider({ children }) {
 
   // Check achievements unlock
   const checkAchievements = async (currentProblems, currentTasks, currentStreak) => {
-    const solvedCount = currentProblems.filter(p => p.status === 'solved').length;
-    const mediumSolvedCount = currentProblems.filter(p => p.status === 'solved' && p.difficulty === 'Medium').length;
-    const hardSolvedCount = currentProblems.filter(p => p.status === 'solved' && p.difficulty === 'Hard').length;
-    const revisionsCompleted = currentProblems.reduce((acc, p) => acc + (p.revisionCount || 0), 0);
-    const tasksCompletedCount = currentTasks.filter(t => t.status === 'done').length;
+    const currProbs = currentProblems || stateRef.current.problems || [];
+    const currTasks = currentTasks || stateRef.current.tasks || [];
+    const currStreak = currentStreak !== undefined ? currentStreak : calculateStreak();
+
+    const localSolvedCount = currProbs.filter((p) => p.status === 'solved').length;
+    const leetcodeSolved = stateRef.current.userProfile?.leetcodeStats?.totalSolved || 0;
+    const solvedCount = Math.max(localSolvedCount, leetcodeSolved);
+
+    const localMedium = currProbs.filter((p) => p.status === 'solved' && p.difficulty === 'Medium').length;
+    const leetcodeMedium = stateRef.current.userProfile?.leetcodeStats?.mediumSolved || 0;
+    const mediumSolvedCount = Math.max(localMedium, leetcodeMedium);
+
+    const localHard = currProbs.filter((p) => p.status === 'solved' && p.difficulty === 'Hard').length;
+    const leetcodeHard = stateRef.current.userProfile?.leetcodeStats?.hardSolved || 0;
+    const hardSolvedCount = Math.max(localHard, leetcodeHard);
+
+    const revisionsCompleted = currProbs.reduce((acc, p) => acc + (p.revisionCount || 0), 0);
+
+    const activeTasksDone = currTasks.filter((t) => t.status === 'done').length;
+    const logsTasksDone = Object.values(stateRef.current.dailyLogs || {}).reduce(
+      (sum, log) => sum + (log?.tasksCompleted || 0), 0
+    );
+    const tasksCompletedCount = Math.max(activeTasksDone, logsTasksDone);
+
     const currentXp = stateRef.current.xp || 0;
 
     const stats = {
@@ -664,11 +751,11 @@ export function DataProvider({ children }) {
       hardSolvedCount,
       revisionsCompleted,
       tasksCompletedCount,
-      streak: currentStreak,
+      streak: currStreak,
       xp: currentXp,
     };
 
-    let updatedAchievements = [...stateRef.current.unlockedAchievements];
+    let updatedAchievements = [...(stateRef.current.unlockedAchievements || [])];
     let newlyEarnedList = [];
 
     ACHIEVEMENTS.forEach((ach) => {
@@ -681,15 +768,20 @@ export function DataProvider({ children }) {
     if (newlyEarnedList.length > 0) {
       stateRef.current.unlockedAchievements = updatedAchievements;
       setUnlockedAchievements(updatedAchievements);
+      const userAchKey = getStorageKey(currentUid, isDemoMode, 'achievements');
+      localStorage.setItem(userAchKey, JSON.stringify(updatedAchievements));
+
       const totalBonusXp = newlyEarnedList.reduce((acc, a) => acc + a.xpReward, 0);
-      addXp(totalBonusXp, `Achievements: ${newlyEarnedList.map(a => a.title).join(', ')}`);
+      addXp(totalBonusXp, `Achievements: ${newlyEarnedList.map((a) => a.title).join(', ')}`, false);
       setNewlyUnlocked(newlyEarnedList[newlyEarnedList.length - 1]);
       await syncUserToFirestore({ unlockedAchievements: updatedAchievements });
     }
+
+    return updatedAchievements;
   };
 
   // Helper for adding XP with rapid-reward grouping and Firestore persistence
-  const addXp = async (amount, reason = '') => {
+  const addXp = async (amount, reason = '', shouldSync = true) => {
     const nextXp = Math.max(0, stateRef.current.xp + amount);
     stateRef.current.xp = nextXp;
     setXp(nextXp);
@@ -720,13 +812,13 @@ export function DataProvider({ children }) {
       }, 2400);
     }
 
-    if (currentUser && !isDemoMode) {
+    if (shouldSync && currentUser && !isDemoMode) {
       await syncUserToFirestore({ xp: nextXp });
     }
   };
 
   // Log today's activity with Firestore persistence
-  const recordDailyActivity = async (type, amount = 1, xpEarned = 0, specificDate = null) => {
+  const recordDailyActivity = async (type, amount = 1, xpEarned = 0, specificDate = null, shouldSync = true) => {
     const targetDate = specificDate || format(new Date(), 'yyyy-MM-dd');
     const currLogs = stateRef.current.dailyLogs || {};
     const current = currLogs[targetDate] || { problemsSolved: 0, tasksCompleted: 0, xpEarned: 0, activeDay: false };
@@ -753,7 +845,7 @@ export function DataProvider({ children }) {
     const userLogsKey = getStorageKey(currentUid, isDemoMode, 'daily_logs');
     localStorage.setItem(userLogsKey, JSON.stringify(nextLogs));
 
-    if (currentUser && !isDemoMode) {
+    if (shouldSync && currentUser && !isDemoMode) {
       await syncUserToFirestore({ dailyLogs: nextLogs });
     }
 
@@ -783,8 +875,8 @@ export function DataProvider({ children }) {
     if (newProb.status === 'solved') {
       addedXp = newProb.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
                 newProb.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
-      addXp(addedXp, `${newProb.difficulty} Problem Solved`);
-      await recordDailyActivity('problem', 1, addedXp);
+      addXp(addedXp, `${newProb.difficulty} Problem Solved`, false);
+      await recordDailyActivity('problem', 1, addedXp, null, false);
     }
 
     if (currentUser && !isDemoMode) {
@@ -795,9 +887,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    const currentXp = stateRef.current.xp;
-    await syncUserToFirestore({ problems: nextProblems, ...(addedXp > 0 ? { xp: currentXp + addedXp } : {}) });
-    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
+    const currentStreak = calculateStreak();
+    await checkAchievements(nextProblems, stateRef.current.tasks, currentStreak);
+    await syncUserToFirestore({ problems: nextProblems, streak: currentStreak });
   };
 
   const updateProblem = async (id, updates) => {
@@ -843,11 +935,11 @@ export function DataProvider({ children }) {
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
     if (xpReward > 0) {
-      addXp(xpReward, 'Problem Status Solved');
-      await recordDailyActivity('problem', 1, xpReward);
+      addXp(xpReward, 'Problem Status Solved', false);
+      await recordDailyActivity('problem', 1, xpReward, null, false);
     } else if (xpReward < 0) {
-      addXp(xpReward, 'Problem Status Reverted');
-      await recordDailyActivity('problem', -1, xpReward);
+      addXp(xpReward, 'Problem Status Reverted', false);
+      await recordDailyActivity('problem', -1, xpReward, null, false);
     }
 
     if (currentUser && !isDemoMode && updatedProblem) {
@@ -858,17 +950,28 @@ export function DataProvider({ children }) {
       }
     }
 
-    await syncUserToFirestore({ problems: nextProblems, ...(xpReward !== 0 ? { xp: Math.max(0, stateRef.current.xp + xpReward) } : {}) });
-    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
+    const currentStreak = calculateStreak();
+    await checkAchievements(nextProblems, stateRef.current.tasks, currentStreak);
+    await syncUserToFirestore({ problems: nextProblems, streak: currentStreak });
   };
 
   const deleteProblem = async (id) => {
+    const probToDelete = stateRef.current.problems.find((p) => p.id === id);
     const nextProblems = stateRef.current.problems.filter((p) => p.id !== id);
     stateRef.current.problems = nextProblems;
     setProblems(nextProblems);
 
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
+
+    if (probToDelete && probToDelete.status === 'solved') {
+      const deduct = probToDelete.difficulty === 'Easy' ? XP_REWARDS.PROBLEM_EASY : 
+                     probToDelete.difficulty === 'Medium' ? XP_REWARDS.PROBLEM_MEDIUM : XP_REWARDS.PROBLEM_HARD;
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const targetDate = probToDelete.solvedAt || todayStr;
+      addXp(-deduct, 'Problem Deleted', false);
+      await recordDailyActivity('problem', -1, -deduct, targetDate, false);
+    }
 
     if (currentUser && !isDemoMode) {
       try {
@@ -878,8 +981,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    await syncUserToFirestore({ problems: nextProblems });
-    checkAchievements(nextProblems, stateRef.current.tasks, calculateStreak());
+    const currentStreak = calculateStreak();
+    await checkAchievements(nextProblems, stateRef.current.tasks, currentStreak);
+    await syncUserToFirestore({ problems: nextProblems, streak: currentStreak });
   };
 
   const completeRevision = async (id) => {
@@ -908,8 +1012,8 @@ export function DataProvider({ children }) {
     const userProbsKey = getStorageKey(currentUid, isDemoMode, 'problems');
     localStorage.setItem(userProbsKey, JSON.stringify(nextProblems));
 
-    addXp(XP_REWARDS.PROBLEM_REVISION, 'Spaced Revision Completed');
-    await recordDailyActivity('problem', 1, XP_REWARDS.PROBLEM_REVISION);
+    addXp(XP_REWARDS.PROBLEM_REVISION, 'Spaced Revision Completed', false);
+    await recordDailyActivity('problem', 1, XP_REWARDS.PROBLEM_REVISION, null, false);
 
     if (currentUser && !isDemoMode) {
       try {
@@ -923,7 +1027,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    await syncUserToFirestore({ problems: nextProblems, xp: stateRef.current.xp + XP_REWARDS.PROBLEM_REVISION });
+    const currentStreak = calculateStreak();
+    await checkAchievements(nextProblems, stateRef.current.tasks, currentStreak);
+    await syncUserToFirestore({ problems: nextProblems, streak: currentStreak });
   };
 
   // Task actions (stored under /users/{uid}/tasks/{taskId} and parent doc)
@@ -950,8 +1056,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    await syncUserToFirestore({ tasks: nextTasks });
-    checkAchievements(stateRef.current.problems, nextTasks, calculateStreak());
+    const currentStreak = calculateStreak();
+    await checkAchievements(stateRef.current.problems, nextTasks, currentStreak);
+    await syncUserToFirestore({ tasks: nextTasks, streak: currentStreak });
   };
 
   const toggleTask = async (id) => {
@@ -987,11 +1094,11 @@ export function DataProvider({ children }) {
     const completionDate = (wasDone && updatedTask.completedAt) ? updatedTask.completedAt : todayStr;
 
     if (!wasDone) {
-      addXp(XP_REWARDS.TASK_COMPLETE, 'Daily Task Completed');
-      await recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr);
+      addXp(XP_REWARDS.TASK_COMPLETE, 'Daily Task Completed', false);
+      await recordDailyActivity('task', 1, XP_REWARDS.TASK_COMPLETE, todayStr, false);
     } else {
-      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Unchecked');
-      await recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate);
+      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Unchecked', false);
+      await recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, completionDate, false);
     }
 
     if (currentUser && !isDemoMode) {
@@ -1003,11 +1110,10 @@ export function DataProvider({ children }) {
     }
 
     const currentStreak = calculateStreak();
-    checkAchievements(stateRef.current.problems, nextTasks, currentStreak);
+    await checkAchievements(stateRef.current.problems, nextTasks, currentStreak);
     await syncUserToFirestore({
       tasks: nextTasks,
       streak: currentStreak,
-      xp: Math.max(0, stateRef.current.xp + (!wasDone ? XP_REWARDS.TASK_COMPLETE : -XP_REWARDS.TASK_COMPLETE)),
     });
   };
 
@@ -1023,8 +1129,8 @@ export function DataProvider({ children }) {
     if (taskToDelete && taskToDelete.status === 'done') {
       const todayStr = format(new Date(), 'yyyy-MM-dd');
       const targetDate = taskToDelete.completedAt || todayStr;
-      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Deleted');
-      recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, targetDate);
+      addXp(-XP_REWARDS.TASK_COMPLETE, 'Task Deleted', false);
+      await recordDailyActivity('task', -1, -XP_REWARDS.TASK_COMPLETE, targetDate, false);
     }
 
     if (currentUser && !isDemoMode) {
@@ -1035,10 +1141,9 @@ export function DataProvider({ children }) {
       }
     }
 
-    await syncUserToFirestore({
-      tasks: nextTasks,
-      ...(taskToDelete && taskToDelete.status === 'done' ? { xp: Math.max(0, stateRef.current.xp - XP_REWARDS.TASK_COMPLETE) } : {})
-    });
+    const currentStreak = calculateStreak();
+    await checkAchievements(stateRef.current.problems, nextTasks, currentStreak);
+    await syncUserToFirestore({ tasks: nextTasks, streak: currentStreak });
   };
 
   // Note actions (stored under /users/{uid}/notes/{noteId} and parent doc)
@@ -1536,6 +1641,7 @@ export function DataProvider({ children }) {
     firestoreSyncStatus,
     firestoreErrorDetails,
     testFirestoreConnection,
+    checkAchievements,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

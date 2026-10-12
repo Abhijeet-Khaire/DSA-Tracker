@@ -1,15 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, LayoutGroup } from 'framer-motion';
 import { useData } from '../context/DataContext';
 import { ACHIEVEMENTS } from '../lib/xpEngine';
 import BadgeDrawable from '../components/shared/BadgeDrawable';
-import { Trophy, Lock, CheckCircle2, Award, Zap, Flame } from 'lucide-react';
+import { Trophy, Lock, CheckCircle2, Award, Zap, Flame, RefreshCw } from 'lucide-react';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
 
 export default function Achievements() {
-  const { unlockedAchievements } = useData();
+  const { unlockedAchievements, checkAchievements, recalculateAndRepairStreak } = useData();
   const [filter, setFilter] = useState('all'); // 'all' | 'unlocked' | 'locked' | 'problems' | 'streak' | 'tasks'
+  const [isSyncing, setIsSyncing] = useState(false);
   const prefersReduced = isReducedMotionPreferred();
+
+  useEffect(() => {
+    if (checkAchievements) {
+      checkAchievements();
+    }
+  }, []);
+
+  const handleSyncBadges = async () => {
+    setIsSyncing(true);
+    if (recalculateAndRepairStreak) {
+      await recalculateAndRepairStreak();
+    } else if (checkAchievements) {
+      await checkAchievements();
+    }
+    setTimeout(() => setIsSyncing(false), 600);
+  };
 
   const displayedAchievements = ACHIEVEMENTS.filter((ach) => {
     const isUnlocked = unlockedAchievements.includes(ach.id);
@@ -40,40 +57,54 @@ export default function Achievements() {
           </p>
         </div>
 
-        {/* Segmented Filter Navbar with Sliding Pill */}
-        <LayoutGroup id="achievementsFilterNav">
-          <div className="flex flex-wrap items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs shrink-0 self-start md:self-auto gap-1">
-            {[
-              { id: 'all', label: `All (${ACHIEVEMENTS.length})` },
-              { id: 'unlocked', label: `Unlocked (${unlockedAchievements.length})` },
-              { id: 'locked', label: `Locked (${Math.max(0, ACHIEVEMENTS.length - unlockedAchievements.length)})` },
-              { id: 'problems', label: 'Algorithms' },
-              { id: 'streak', label: 'Streaks' },
-              { id: 'tasks', label: 'Productivity' },
-            ].map((tab) => {
-              const isActive = filter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setFilter(tab.id)}
-                  className={`relative px-3 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer select-none ${
-                    isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId={prefersReduced ? undefined : "achievementFilterActivePill"}
-                      transition={SPRING_SMOOTH}
-                      className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 shadow-sm shadow-amber-500/30"
-                    />
-                  )}
-                  <span className="relative z-10">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </LayoutGroup>
+        {/* Action Controls & Filter Navbar */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleSyncBadges}
+            disabled={isSyncing}
+            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Verify and synchronize achievements & XP"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Verifying...' : 'Sync Badges'}</span>
+          </button>
+
+          {/* Segmented Filter Navbar with Sliding Pill */}
+          <LayoutGroup id="achievementsFilterNav">
+            <div className="flex flex-wrap items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs shrink-0 gap-1">
+              {[
+                { id: 'all', label: `All (${ACHIEVEMENTS.length})` },
+                { id: 'unlocked', label: `Unlocked (${unlockedAchievements.length})` },
+                { id: 'locked', label: `Locked (${Math.max(0, ACHIEVEMENTS.length - unlockedAchievements.length)})` },
+                { id: 'problems', label: 'Algorithms' },
+                { id: 'streak', label: 'Streaks' },
+                { id: 'tasks', label: 'Productivity' },
+              ].map((tab) => {
+                const isActive = filter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilter(tab.id)}
+                    className={`relative px-3 py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer select-none ${
+                      isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId={prefersReduced ? undefined : "achievementFilterActivePill"}
+                        transition={SPRING_SMOOTH}
+                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 shadow-sm shadow-amber-500/30"
+                      />
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
+        </div>
       </div>
 
       {/* Grid of achievements with vector drawables */}

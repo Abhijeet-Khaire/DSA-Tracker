@@ -22,7 +22,11 @@ import {
   HelpCircle,
   Keyboard,
   Highlighter,
-  Check
+  Check,
+  Download,
+  Maximize2,
+  Minimize2,
+  ArrowUpDown
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -49,6 +53,52 @@ function getPreviewSnippet(content) {
     .slice(0, 95);
 }
 
+function convertNoteToMarkdown(note) {
+  if (!note) return '';
+  const title = note.title || 'Untitled Note';
+  let md = (note.content || '')
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '\n# $1\n\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '\n## $1\n\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '\n### $1\n\n')
+    .replace(/<blockquote[^>]*>(.*?)<\/blockquote>/gi, '\n> $1\n\n')
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+    .replace(/<\/ul>|<\/ol>/gi, '\n')
+    .replace(/<mark[^>]*>(.*?)<\/mark>/gi, '==$1==')
+    .replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`')
+    .replace(/<strong[^>]*>(.*?)<\/strong>|<b[^>]*>(.*?)<\/b>/gi, '**$1**')
+    .replace(/<em[^>]*>(.*?)<\/em>|<i[^>]*>(.*?)<\/i>/gi, '*$1*')
+    .replace(/<strike[^>]*>(.*?)<\/strike>|<s[^>]*>(.*?)<\/s>/gi, '~~$1~~')
+    .replace(/<u[^>]*>(.*?)<\/u>/gi, '_$1_')
+    .replace(/<hr[^>]*>/gi, '\n---\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+
+  let header = `# ${title}\n\n`;
+  if (note.category) header += `**Category:** ${note.category}\n`;
+  if (Array.isArray(note.tags) && note.tags.length > 0) {
+    header += `**Tags:** ${note.tags.map((t) => `#${t}`).join(' ')}\n`;
+  }
+  if (note.updatedAt || note.createdAt) {
+    header += `**Date:** ${new Date(note.updatedAt || note.createdAt).toLocaleDateString()}\n`;
+  }
+  header += '\n---\n\n';
+
+  let result = `${header}${md}`;
+
+  if (note.codeSnippet && note.codeSnippet.trim()) {
+    result += `\n\n### Code Template (${note.language || 'cpp'})\n\`\`\`${note.language || 'cpp'}\n${note.codeSnippet.trim()}\n\`\`\`\n`;
+  }
+
+  return result;
+}
+
 export default function Notes() {
   const { notes, addNote, updateNote, deleteNote, togglePinNote, problems } = useData();
 
@@ -56,12 +106,18 @@ export default function Notes() {
   const [activeFolder, setActiveFolder] = useState('my');
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   
-  // Search and Category Filter
+  // Search, Category, and Sorting Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [sortBy, setSortBy] = useState('updated'); // 'updated' | 'created' | 'alpha'
+  
+  // Focus / Expand mode (collapses sidebar for distraction-free writing)
+  const [isFocusMode, setIsFocusMode] = useState(false);
   
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+  const [isExpandedSnippet, setIsExpandedSnippet] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [copiedMarkdown, setCopiedMarkdown] = useState(false);
   const [saveIndicator, setSaveIndicator] = useState('Saved');
   const [isMobileListVisible, setIsMobileListVisible] = useState(true);
 
@@ -118,25 +174,53 @@ export default function Notes() {
     });
   }, [folderNotes, selectedCategory, searchQuery]);
 
+  // Sort notes based on user preference, with pinned notes always first
+  const sortedNotes = useMemo(() => {
+    return [...filteredNotes].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
+      if (sortBy === 'alpha') {
+        return (a.title || '').localeCompare(b.title || '');
+      }
+      if (sortBy === 'created') {
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeB - timeA;
+      }
+      // default: updated
+      const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+  }, [filteredNotes, sortBy]);
+
   // Active selected note object
   const activeNote = useMemo(() => {
-    if (!selectedNoteId) return filteredNotes[0] || null;
-    return folderNotes.find((n) => n.id === selectedNoteId) || filteredNotes[0] || null;
-  }, [selectedNoteId, folderNotes, filteredNotes]);
+    if (!selectedNoteId) return sortedNotes[0] || null;
+    return folderNotes.find((n) => n.id === selectedNoteId) || sortedNotes[0] || null;
+  }, [selectedNoteId, folderNotes, sortedNotes]);
 
   // Auto-select first note when folder changes or list refreshes
   useEffect(() => {
-    if (!selectedNoteId && filteredNotes.length > 0) {
-      setSelectedNoteId(filteredNotes[0].id);
+    if (!selectedNoteId && sortedNotes.length > 0) {
+      setSelectedNoteId(sortedNotes[0].id);
     }
-  }, [filteredNotes, selectedNoteId]);
+  }, [sortedNotes, selectedNoteId]);
 
-  // Keyboard shortcut: Cmd+N / Ctrl+N to create a note
+  // Keyboard shortcuts: Cmd+N (create), Cmd+B (focus toggle), Cmd+S (save)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+      const isMeta = e.metaKey || e.ctrlKey;
+      if (isMeta && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         handleCreateNewNote();
+      } else if (isMeta && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsFocusMode((prev) => !prev);
+      } else if (isMeta && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setSaveIndicator('Saved');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -239,9 +323,41 @@ export default function Notes() {
     setTimeout(() => setCopiedSnippet(false), 2000);
   };
 
+  // Export note to Markdown (.md)
+  const handleExportMarkdown = () => {
+    if (!activeNote) return;
+    const md = convertNoteToMarkdown(activeNote);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const safeTitle = (activeNote.title || 'note').replace(/[^a-zA-Z0-9_-]/g, '_');
+    link.download = `${safeTitle}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Copy full note content as Markdown
+  const handleCopyMarkdown = () => {
+    if (!activeNote) return;
+    const md = convertNoteToMarkdown(activeNote);
+    navigator.clipboard.writeText(md);
+    setCopiedMarkdown(true);
+    setTimeout(() => setCopiedMarkdown(false), 2000);
+  };
+
+  // Insert code template directly into active note's rich text body
+  const handleInsertSnippetIntoNote = () => {
+    if (!activeNote || !activeNote.codeSnippet || activeNote.isCurated || activeNote.isFromProblem) return;
+    const cleanSnippet = activeNote.codeSnippet.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const formattedBlock = `<pre style="background: rgba(15,23,42,0.9); padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid rgba(56,189,248,0.2); overflow-x: auto;"><code style="color: #38bdf8; font-family: monospace; font-size: 0.85rem;">${cleanSnippet}</code></pre>`;
+    const updated = `${activeNote.content || ''}<p><br></p>${formattedBlock}<p><br></p>`;
+    handleUpdateActiveField('content', updated);
+  };
+
   // Separate pinned and regular notes
-  const pinnedNotesList = useMemo(() => filteredNotes.filter((n) => n.isPinned), [filteredNotes]);
-  const otherNotesList = useMemo(() => filteredNotes.filter((n) => !n.isPinned), [filteredNotes]);
+  const pinnedNotesList = useMemo(() => sortedNotes.filter((n) => n.isPinned), [sortedNotes]);
+  const otherNotesList = useMemo(() => sortedNotes.filter((n) => !n.isPinned), [sortedNotes]);
 
   return (
     <div className="h-[calc(100vh-7.5rem)] flex flex-col space-y-3 pb-2 max-w-7xl mx-auto overflow-hidden">
@@ -258,11 +374,24 @@ export default function Notes() {
                 {notes.length} custom
               </span>
             </h1>
-            <p className="text-[11px] text-slate-400">macOS-style WYSIWYG editor with smooth sliding & pop-up tools</p>
+            <p className="text-[11px] text-slate-400">Rich WYSIWYG editor with smooth sliding & pop-up tools</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Focus / Wide Mode Toggle */}
+          <button
+            onClick={() => setIsFocusMode(!isFocusMode)}
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+              isFocusMode
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-slate-700'
+            }`}
+            title={isFocusMode ? 'Exit Focus Mode (⌘B)' : 'Focus Mode / Full Workspace (⌘B)'}
+          >
+            {isFocusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+
           {/* Help & Shortcuts Pop-up trigger */}
           <button
             onClick={() => setShowHelpModal(true)}
@@ -333,15 +462,15 @@ export default function Notes() {
         </div>
       </div>
 
-      {/* Main Split-Pane macOS Interface */}
+      {/* Main Split-Pane Interface */}
       <div className="flex-1 flex rounded-2xl glass-panel bg-slate-900/60 border border-slate-800/90 overflow-hidden shadow-2xl relative">
         {/* ================= LEFT PANE: Notes List Explorer ================= */}
         <div className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800/80 bg-slate-950/60 shrink-0 h-full ${
-          !isMobileListVisible ? 'hidden md:flex' : 'flex'
+          isFocusMode ? 'hidden' : (!isMobileListVisible ? 'hidden md:flex' : 'flex')
         }`}>
-          {/* List Search & New Note Header */}
+          {/* List Search, Sort & New Note Header */}
           <div className="p-3 border-b border-slate-800/80 space-y-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <div className="relative flex-1">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -354,11 +483,26 @@ export default function Notes() {
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
                 )}
+              </div>
+
+              {/* Sort Selector */}
+              <div className="relative shrink-0">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="h-8 pl-6 pr-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-[10px] font-mono focus:outline-none focus:border-cyan-500 cursor-pointer appearance-none"
+                  title="Sort notes list"
+                >
+                  <option value="updated">Recent</option>
+                  <option value="created">Newest</option>
+                  <option value="alpha">A-Z</option>
+                </select>
+                <ArrowUpDown className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
               {activeFolder === 'my' && (
@@ -389,6 +533,19 @@ export default function Notes() {
                 </button>
               ))}
             </div>
+
+            {/* Search Result Counter */}
+            {searchQuery && (
+              <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5 px-0.5">
+                <span>{sortedNotes.length} result{sortedNotes.length === 1 ? '' : 's'} found</span>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-cyan-400 hover:underline cursor-pointer font-semibold"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Scrollable Note List with Smooth Sliding Active Indicator */}
@@ -452,7 +609,7 @@ export default function Notes() {
           </LayoutGroup>
         </div>
 
-        {/* ================= RIGHT PANE: macOS WYSIWYG Workspace ================= */}
+        {/* ================= RIGHT PANE: WYSIWYG Workspace ================= */}
         <div className={`flex-1 flex flex-col bg-slate-900/40 h-full overflow-hidden ${
           isMobileListVisible ? 'hidden md:flex' : 'flex'
         }`}>
@@ -511,14 +668,48 @@ export default function Notes() {
                     )}
                   </div>
 
-                  {/* Right Actions: Autosave indicator, Pin, Duplicate, Delete */}
-                  <div className="flex items-center gap-1.5">
+                  {/* Right Actions: Autosave indicator, Markdown Copy/Export, Pin, Duplicate, Delete */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Exit Focus Mode button if active */}
+                    {isFocusMode && (
+                      <button
+                        onClick={() => setIsFocusMode(false)}
+                        className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-cyan-300 text-xs font-semibold cursor-pointer transition-colors mr-1"
+                        title="Show Sidebar (⌘B)"
+                      >
+                        <Minimize2 className="w-3.5 h-3.5" />
+                        <span>Show Sidebar</span>
+                      </button>
+                    )}
+
                     {!activeNote.isCurated && !activeNote.isFromProblem && (
                       <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono mr-2">
                         <span className={`w-1.5 h-1.5 rounded-full ${saveIndicator === 'Saved' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
                         <span>{saveIndicator}</span>
                       </div>
                     )}
+
+                    {/* Copy Note as Markdown */}
+                    <button
+                      onClick={handleCopyMarkdown}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors cursor-pointer"
+                      title={copiedMarkdown ? 'Copied to Clipboard!' : 'Copy Note as Markdown'}
+                    >
+                      {copiedMarkdown ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+
+                    {/* Export / Download as .md */}
+                    <button
+                      onClick={handleExportMarkdown}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-cyan-300 border border-slate-800 transition-colors cursor-pointer"
+                      title="Export Note to Markdown file (.md)"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
 
                     {/* Pin Toggle */}
                     {!activeNote.isCurated && !activeNote.isFromProblem && (
@@ -646,7 +837,7 @@ export default function Notes() {
                   </div>
                 </div>
 
-                {/* WYSIWYG macOS Notes Editor (Visually highlights text in real-time!) */}
+                {/* WYSIWYG Notes Editor (Visually highlights text in real-time!) */}
                 <div className="flex-1 px-6 py-2 overflow-hidden flex flex-col">
                   <MacNotesEditor
                     content={activeNote.content}
@@ -684,7 +875,17 @@ export default function Notes() {
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {!activeNote.isCurated && !activeNote.isFromProblem && activeNote.codeSnippet && (
+                              <button
+                                type="button"
+                                onClick={handleInsertSnippetIntoNote}
+                                className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Insert this snippet directly into your note"
+                              >
+                                <Plus className="w-3 h-3" /> Insert into Note
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={handleCopySnippet}
@@ -694,8 +895,16 @@ export default function Notes() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => setIsExpandedSnippet(!isExpandedSnippet)}
+                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 cursor-pointer"
+                              title={isExpandedSnippet ? 'Compact view' : 'Expand view'}
+                            >
+                              {isExpandedSnippet ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setShowCodeSnippet(false)}
-                              className="text-slate-500 hover:text-slate-300"
+                              className="text-slate-500 hover:text-slate-300 p-0.5 cursor-pointer"
                               title="Hide template"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -705,14 +914,14 @@ export default function Notes() {
 
                         {!activeNote.isCurated ? (
                           <textarea
-                            rows={5}
+                            rows={isExpandedSnippet ? 14 : 5}
                             placeholder={`// Paste reusable ${activeNote.language?.toUpperCase() || 'C++'} template code here...`}
                             value={activeNote.codeSnippet || ''}
                             onChange={(e) => handleUpdateActiveField('codeSnippet', e.target.value)}
                             className="w-full p-3 bg-transparent text-cyan-300 text-xs font-mono leading-relaxed focus:outline-none resize-none"
                           />
                         ) : (
-                          <pre className="p-3 text-xs font-mono text-cyan-300 overflow-x-auto leading-relaxed max-h-[160px]">
+                          <pre className={`p-3 text-xs font-mono text-cyan-300 overflow-x-auto leading-relaxed ${isExpandedSnippet ? 'max-h-[380px]' : 'max-h-[160px]'}`}>
                             <code>{activeNote.codeSnippet}</code>
                           </pre>
                         )}
@@ -737,7 +946,7 @@ export default function Notes() {
               </motion.div>
             </AnimatePresence>
           ) : (
-            /* macOS Empty Workspace State */
+            /* Empty Workspace State */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-center text-slate-400">
                 <FileText className="w-8 h-8" />
@@ -838,7 +1047,7 @@ export default function Notes() {
                     <Keyboard className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-slate-100">macOS Notes Guide & Shortcuts</h3>
+                    <h3 className="text-base font-bold text-slate-100">Notes Guide & Shortcuts</h3>
                     <p className="text-xs text-slate-400">Master real-time highlighting & fast workflows</p>
                   </div>
                 </div>
@@ -857,7 +1066,7 @@ export default function Notes() {
                     <span>Floating Selection Pop-up Menu</span>
                   </div>
                   <p className="text-slate-400 leading-relaxed text-[11px]">
-                    Select any phrase or sentence in your note with your mouse or keyboard. A floating macOS toolbar pops up immediately above your selection with 5 glowing color highlighters and text styling tools.
+                    Select any phrase or sentence in your note with your mouse or keyboard. A floating toolbar pops up immediately above your selection with 5 glowing color highlighters and text styling tools.
                   </p>
                 </div>
 
@@ -869,16 +1078,16 @@ export default function Notes() {
                       <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘N / Ctrl+N</kbd>
                     </div>
                     <div className="flex items-center justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span className="text-slate-400">Bold Text</span>
+                      <span className="text-slate-400">Focus Mode</span>
                       <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘B / Ctrl+B</kbd>
                     </div>
                     <div className="flex items-center justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span className="text-slate-400">Italic Text</span>
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘I / Ctrl+I</kbd>
+                      <span className="text-slate-400">Quick Save</span>
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘S / Ctrl+S</kbd>
                     </div>
                     <div className="flex items-center justify-between p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span className="text-slate-400">Underline Text</span>
-                      <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘U / Ctrl+U</kbd>
+                      <span className="text-slate-400">Bold Text</span>
+                      <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">⌘B in editor</kbd>
                     </div>
                   </div>
                 </div>
@@ -911,7 +1120,7 @@ export default function Notes() {
   );
 }
 
-// Single Note Row in macOS List Explorer with Smooth Sliding Pill
+// Single Note Row in List Explorer with Smooth Sliding Pill
 function NoteListItem({ note, isSelected, onSelect }) {
   const snippet = getPreviewSnippet(note.content);
   const formattedDate = note.updatedAt || note.createdAt

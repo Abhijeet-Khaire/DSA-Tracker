@@ -12,7 +12,10 @@ import {
   Heading2,
   Strikethrough,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Code,
+  Minus,
+  RemoveFormatting
 } from 'lucide-react';
 import FloatingHighlighterMenu from './FloatingHighlighterMenu';
 
@@ -214,6 +217,39 @@ export default function MacNotesEditor({
     }
   };
 
+  const applyInlineCode = () => {
+    if (readOnly) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      executeCommand('insertHTML', '<code>code</code>');
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const existingCode = selection.anchorNode?.parentElement?.closest('code');
+    if (existingCode) {
+      const parent = existingCode.parentNode;
+      while (existingCode.firstChild) {
+        parent.insertBefore(existingCode.firstChild, existingCode);
+      }
+      parent.removeChild(existingCode);
+      handleInput();
+      return;
+    }
+
+    const code = document.createElement('code');
+    try {
+      const fragment = range.extractContents();
+      code.appendChild(fragment);
+      range.insertNode(code);
+      selection.removeAllRanges();
+      handleInput();
+    } catch (err) {
+      document.execCommand('insertHTML', false, `<code>${selection.toString()}</code>`);
+      handleInput();
+    }
+  };
+
   const readTimeMin = Math.max(1, Math.ceil(stats.words / 200));
 
   return (
@@ -224,6 +260,7 @@ export default function MacNotesEditor({
           editorRef={editorRef}
           onApplyHighlight={applyColorHighlight}
           onApplyFormat={executeCommand}
+          onApplyInlineCode={applyInlineCode}
         />
       )}
 
@@ -231,14 +268,14 @@ export default function MacNotesEditor({
       {!readOnly && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-900/90 border-b border-slate-800 text-slate-300 text-xs shrink-0 select-none backdrop-blur-md">
           {/* Left: macOS Window Traffic Lights + Formatting Group */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <div className="flex items-center gap-1.5 mr-2">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 border border-rose-600/40" title="Close" />
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-600/40" title="Minimize" />
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-600/40" title="Expand" />
             </div>
 
-            <div className="w-px h-4 bg-slate-800 mx-1" />
+            <div className="w-px h-4 bg-slate-800 mx-1 hidden sm:block" />
 
             <button
               type="button"
@@ -259,7 +296,7 @@ export default function MacNotesEditor({
               <Heading2 className="w-3.5 h-3.5" />
             </button>
 
-            <div className="w-px h-4 bg-slate-800 mx-1" />
+            <div className="w-px h-4 bg-slate-800 mx-1 hidden sm:block" />
 
             <button
               type="button"
@@ -297,8 +334,17 @@ export default function MacNotesEditor({
             >
               <Strikethrough className="w-3.5 h-3.5" />
             </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={applyInlineCode}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+              title="Inline Code (`code`)"
+            >
+              <Code className="w-3.5 h-3.5" />
+            </button>
 
-            <div className="w-px h-4 bg-slate-800 mx-1" />
+            <div className="w-px h-4 bg-slate-800 mx-1 hidden sm:block" />
 
             <button
               type="button"
@@ -326,6 +372,24 @@ export default function MacNotesEditor({
               title="Quote Callout"
             >
               <Quote className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => executeCommand('insertHorizontalRule')}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+              title="Divider (<hr>)"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => executeCommand('removeFormat')}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+              title="Clear Formatting"
+            >
+              <RemoveFormatting className="w-3.5 h-3.5" />
             </button>
           </div>
 
