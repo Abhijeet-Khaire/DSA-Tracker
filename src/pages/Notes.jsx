@@ -44,6 +44,12 @@ function getPreviewSnippet(content) {
   if (!content) return 'No additional text';
   return content
     .replace(/<[^>]*>/g, ' ') // Strip HTML tags
+    .replace(/&nbsp;/gi, ' ') // Convert &nbsp; non-breaking spaces to regular spaces
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/==([a-zA-Z]+:)?/g, '')
     .replace(/==/g, '')
     .replace(/```[a-z]*[\s\S]*?```/g, '[Code Template]')
@@ -166,7 +172,8 @@ export default function Notes() {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       const matchTitle = n.title?.toLowerCase().includes(q);
-      const matchContent = n.content?.toLowerCase().includes(q);
+      const cleanContent = n.content?.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ');
+      const matchContent = cleanContent?.toLowerCase().includes(q);
       const matchCode = n.codeSnippet?.toLowerCase().includes(q);
       const matchTags = Array.isArray(n.tags) && n.tags.some((t) => t.toLowerCase().includes(q));
 

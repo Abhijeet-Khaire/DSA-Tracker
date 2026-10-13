@@ -17,8 +17,9 @@ const COLOR_MAP = {
 };
 
 // Renders an inline text string with ==color:text== or ==text== highlights, `code`, and **bold**
-export function renderInlineHighlightedText(text) {
-  if (!text) return null;
+export function renderInlineHighlightedText(rawText) {
+  if (!rawText) return null;
+  const text = rawText.replace(/&nbsp;/gi, ' ');
 
   // Regex to match ==color:text== or ==text==, `code`, and **bold**
   const regex = /(==(?:([a-zA-Z]+):)?([\s\S]+?)==|`([^`]+)`|\*\*([^*]+)\*\*)/g;
@@ -112,7 +113,8 @@ function CodeBlock({ code, lang = '' }) {
 export default function HighlightedMarkdown({ content, className = '' }) {
   if (!content) return null;
 
-  const lines = content.split('\n');
+  const cleanContent = content.replace(/&nbsp;/gi, ' ');
+  const lines = cleanContent.split('\n');
   const renderedElements = [];
   let inCodeBlock = false;
   let codeBuffer = [];
