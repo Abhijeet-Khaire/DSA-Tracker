@@ -94,13 +94,14 @@ function extractAndTrimFragment(range) {
   return { fragment, trailingSpace };
 }
 
-// Detects if the caret is positioned at the very end boundary of an inline <mark> or <code> tag
-function getInlineFormattedAtCaretEnd(selection) {
+// Detects if the caret is positioned at the boundary of an inline <mark> or <code> tag
+function getAdjacentMark(selection) {
   if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
   const container = range.startContainer;
   const offset = range.startOffset;
 
+  // Case 1: Caret is inside <mark> or <code> at the very end
   if (container.nodeType === Node.TEXT_NODE) {
     const el = container.parentElement?.closest('mark.mac-highlight, code');
     if (el) {
@@ -115,15 +116,33 @@ function getInlineFormattedAtCaretEnd(selection) {
           next = next.nextSibling;
         }
         if (!hasMore) {
-          return el;
+          return { el, position: 'inside-end' };
         }
+      }
+    }
+
+    // Case 2: Caret is in a text node directly AFTER <mark> or <code> at offset 0
+    if (offset === 0) {
+      let prev = container.previousSibling;
+      while (prev && prev.nodeType === Node.TEXT_NODE && !prev.textContent) {
+        prev = prev.previousSibling;
+      }
+      if (prev && (prev.nodeName === 'MARK' || prev.nodeName === 'CODE')) {
+        return { el: prev, position: 'after-start', textNode: container };
       }
     }
   }
 
-  if (container.nodeType === Node.ELEMENT_NODE && (container.tagName === 'MARK' || container.tagName === 'CODE')) {
-    if (offset === container.childNodes.length) {
-      return container;
+  // Case 3: Caret is in the parent element (e.g. <p>) at child offset directly after <mark> or <code>
+  if (container.nodeType === Node.ELEMENT_NODE) {
+    if (container.tagName === 'MARK' || container.tagName === 'CODE') {
+      if (offset === container.childNodes.length) {
+        return { el: container, position: 'inside-end' };
+      }
+    }
+    const childBefore = container.childNodes[offset - 1];
+    if (childBefore && (childBefore.nodeName === 'MARK' || childBefore.nodeName === 'CODE')) {
+      return { el: childBefore, position: 'after-element', parent: container, offset };
     }
   }
 
@@ -213,8 +232,9 @@ export default function MacNotesEditor({
   const handleInput = () => {
     if (!editorRef.current) return;
     // Clean up any empty mark elements left after backspacing
-    editorRef.current.querySelectorAll('mark.mac-highlight').forEach((m) => {
-      if (!m.textContent) {
+    editorRef.current.querySelectorAll('mark.mac-highlight, code').forEach((m) => {
+      const text = m.textContent?.replace(/\u200B/g, '');
+      if (!text) {
         m.remove();
       }
     });
@@ -286,7 +306,7 @@ export default function MacNotesEditor({
       mark.appendChild(fragment);
       range.insertNode(mark);
 
-      // Keep any trailing whitespace or ensure an unstyled text node exists immediately outside the mark
+      // Keep any trailing whitespace or insert a zero-width space outside the mark so browser doesn't collapse
       let nextNode = mark.nextSibling;
       let targetOffset = 0;
 
@@ -295,21 +315,19 @@ export default function MacNotesEditor({
         mark.parentNode?.insertBefore(spaceNode, nextNode);
         nextNode = spaceNode;
         targetOffset = trailingSpace.length;
-      } else if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
-        const emptyNode = document.createTextNode('');
-        mark.parentNode?.insertBefore(emptyNode, nextNode);
-        nextNode = emptyNode;
-        targetOffset = 0;
+      } else {
+        const zwsNode = document.createTextNode('\u200B');
+        mark.parentNode?.insertBefore(zwsNode, nextNode);
+        nextNode = zwsNode;
+        targetOffset = 1;
       }
 
       // Position caret immediately AFTER the highlight in the outside text node, so next words are unhighlighted
       const newRange = document.createRange();
-      if (nextNode) {
-        newRange.setStart(nextNode, targetOffset);
-        newRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
-      }
+      newRange.setStart(nextNode, targetOffset);
+      newRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
       editorRef.current?.focus();
       handleInput();
     } catch (err) {
@@ -352,20 +370,18 @@ export default function MacNotesEditor({
         code.parentNode?.insertBefore(spaceNode, nextNode);
         nextNode = spaceNode;
         targetOffset = trailingSpace.length;
-      } else if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
-        const emptyNode = document.createTextNode('');
-        code.parentNode?.insertBefore(emptyNode, nextNode);
-        nextNode = emptyNode;
-        targetOffset = 0;
+      } else {
+        const zwsNode = document.createTextNode('\u200B');
+        code.parentNode?.insertBefore(zwsNode, nextNode);
+        nextNode = zwsNode;
+        targetOffset = 1;
       }
 
       const newRange = document.createRange();
-      if (nextNode) {
-        newRange.setStart(nextNode, targetOffset);
-        newRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
-      }
+      newRange.setStart(nextNode, targetOffset);
+      newRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
       editorRef.current?.focus();
       handleInput();
     } catch (err) {
@@ -377,9 +393,11 @@ export default function MacNotesEditor({
   const handleKeyDown = (e) => {
     if (readOnly) return;
     const selection = window.getSelection();
-    const el = getInlineFormattedAtCaretEnd(selection);
+    const info = getAdjacentMark(selection);
 
-    if (el) {
+    if (info) {
+      const el = info.el;
+
       // 1. Space: User wants to separate the highlighted word from the next word
       if (e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
@@ -410,17 +428,17 @@ export default function MacNotesEditor({
         if (next && next.nodeType === Node.TEXT_NODE) {
           e.preventDefault();
           const newRange = document.createRange();
-          newRange.setStart(next, 0);
+          newRange.setStart(next, next.textContent.length > 0 ? 1 : 0);
           newRange.collapse(true);
           selection.removeAllRanges();
           selection.addRange(newRange);
           return;
-        } else if (!next) {
+        } else {
           e.preventDefault();
-          const emptyNode = document.createTextNode('');
-          el.parentNode?.appendChild(emptyNode);
+          const zws = document.createTextNode('\u200B');
+          el.parentNode?.insertBefore(zws, next);
           const newRange = document.createRange();
-          newRange.setStart(emptyNode, 0);
+          newRange.setStart(zws, 1);
           newRange.collapse(true);
           selection.removeAllRanges();
           selection.addRange(newRange);
@@ -432,12 +450,12 @@ export default function MacNotesEditor({
       if (e.key === 'Enter') {
         let next = el.nextSibling;
         if (!next || next.nodeType !== Node.TEXT_NODE) {
-          const emptyNode = document.createTextNode('');
-          el.parentNode?.insertBefore(emptyNode, next);
-          next = emptyNode;
+          const zws = document.createTextNode('\u200B');
+          el.parentNode?.insertBefore(zws, next);
+          next = zws;
         }
         const newRange = document.createRange();
-        newRange.setStart(next, 0);
+        newRange.setStart(next, next.textContent.length > 0 ? 1 : 0);
         newRange.collapse(true);
         selection.removeAllRanges();
         selection.addRange(newRange);
@@ -447,21 +465,32 @@ export default function MacNotesEditor({
 
   const handleBeforeInput = (e) => {
     if (readOnly) return;
-    if (e.inputType === 'insertText') {
+    if (e.inputType === 'insertText' && e.data) {
       const selection = window.getSelection();
-      const el = getInlineFormattedAtCaretEnd(selection);
-      if (el) {
-        // Typing at the end boundary of highlight/code: snap caret outside so typed characters are normal text
+      const info = getAdjacentMark(selection);
+      if (info) {
+        // Prevent browser's native inline formatting inheritance
+        e.preventDefault();
+        const el = info.el;
         let next = el.nextSibling;
-        if (!next || next.nodeType !== Node.TEXT_NODE) {
-          next = document.createTextNode('');
-          el.parentNode?.insertBefore(next, el.nextSibling);
+
+        if (next && next.nodeType === Node.TEXT_NODE) {
+          next.insertData(0, e.data);
+          const newRange = document.createRange();
+          newRange.setStart(next, e.data.length);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else {
+          const textNode = document.createTextNode(e.data);
+          el.parentNode?.insertBefore(textNode, next);
+          const newRange = document.createRange();
+          newRange.setStart(textNode, e.data.length);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
         }
-        const newRange = document.createRange();
-        newRange.setStart(next, 0);
-        newRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
+        handleInput();
       }
     }
   };
@@ -470,16 +499,17 @@ export default function MacNotesEditor({
     if (readOnly) return;
     setTimeout(() => {
       const selection = window.getSelection();
-      const el = getInlineFormattedAtCaretEnd(selection);
-      if (el) {
-        // If clicking right after the highlighted word (on its end padding), snap cursor outside el
+      const info = getAdjacentMark(selection);
+      if (info && info.position === 'inside-end') {
+        const el = info.el;
         let next = el.nextSibling;
         if (!next || next.nodeType !== Node.TEXT_NODE) {
-          next = document.createTextNode('');
-          el.parentNode?.insertBefore(next, el.nextSibling);
+          const zws = document.createTextNode('\u200B');
+          el.parentNode?.insertBefore(zws, el.nextSibling);
+          next = zws;
         }
         const newRange = document.createRange();
-        newRange.setStart(next, 0);
+        newRange.setStart(next, next.textContent === '\u200B' ? 1 : 0);
         newRange.collapse(true);
         selection.removeAllRanges();
         selection.addRange(newRange);
