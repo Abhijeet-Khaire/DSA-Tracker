@@ -86,10 +86,23 @@ export default function NoteModal({ isOpen, onClose, onSave, initialNote = null 
     const selectedText = content.substring(start, end);
 
     let replacement = '';
+    let cursorPosition = 0;
+
     if (selectedText) {
-      replacement = `==${colorId}:${selectedText}==`;
+      // Detach trailing whitespace from highlight so the highlight doesn't swallow spaces
+      const match = selectedText.match(/^(.*?)(\s+)$/s);
+      if (match) {
+        const cleanText = match[1];
+        const trailingSpaces = match[2];
+        replacement = `==${colorId}:${cleanText}==${trailingSpaces}`;
+        cursorPosition = start + replacement.length;
+      } else {
+        replacement = `==${colorId}:${selectedText}==`;
+        cursorPosition = start + replacement.length;
+      }
     } else {
       replacement = `==${colorId}:highlighted text==`;
+      cursorPosition = start + 2 + colorId.length + 1;
     }
 
     const nextContent = content.substring(0, start) + replacement + content.substring(end);
@@ -98,10 +111,15 @@ export default function NoteModal({ isOpen, onClose, onSave, initialNote = null 
     // Re-focus and set selection
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(
-        start + (selectedText ? replacement.length : 2 + colorId.length + 1),
-        start + replacement.length - 2
-      );
+      if (selectedText) {
+        // Place caret AFTER the highlight tag and trailing space so subsequent typing is unhighlighted
+        textarea.setSelectionRange(cursorPosition, cursorPosition);
+      } else {
+        textarea.setSelectionRange(
+          cursorPosition,
+          cursorPosition + 'highlighted text'.length
+        );
+      }
     }, 10);
   };
 

@@ -67,19 +67,89 @@ export const MAC_HIGHLIGHT_COLORS = [
   },
 ];
 
+// Safely extracts content from range while detaching any trailing whitespace
+// so highlight tags don't swallow following spaces
+function extractAndTrimFragment(range) {
+  const fragment = range.extractContents();
+  const text = fragment.textContent || '';
+  const match = text.match(/(\s+)$/);
+  let trailingSpace = '';
+
+  if (match) {
+    trailingSpace = match[1];
+    const trimLastTextNode = (node) => {
+      if (!node) return false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        node.textContent = node.textContent.replace(/\s+$/, '');
+        return true;
+      }
+      for (let i = node.childNodes.length - 1; i >= 0; i--) {
+        if (trimLastTextNode(node.childNodes[i])) return true;
+      }
+      return false;
+    };
+    trimLastTextNode(fragment);
+  }
+
+  return { fragment, trailingSpace };
+}
+
+// Detects if the caret is positioned at the very end boundary of an inline <mark> or <code> tag
+function getInlineFormattedAtCaretEnd(selection) {
+  if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  const container = range.startContainer;
+  const offset = range.startOffset;
+
+  if (container.nodeType === Node.TEXT_NODE) {
+    const el = container.parentElement?.closest('mark.mac-highlight, code');
+    if (el) {
+      if (offset === container.textContent.length) {
+        let next = container.nextSibling;
+        let hasMore = false;
+        while (next) {
+          if (next.textContent && next.textContent.length > 0) {
+            hasMore = true;
+            break;
+          }
+          next = next.nextSibling;
+        }
+        if (!hasMore) {
+          return el;
+        }
+      }
+    }
+  }
+
+  if (container.nodeType === Node.ELEMENT_NODE && (container.tagName === 'MARK' || container.tagName === 'CODE')) {
+    if (offset === container.childNodes.length) {
+      return container;
+    }
+  }
+
+  return null;
+}
+
 // Converts legacy ==color:text== or plain markdown into rich HTML on first load
 export function normalizeContentToHtml(raw) {
   if (!raw) return '<p><br></p>';
 
-  // If already rich HTML (contains tags), return as is
-  if (/<[a-z][\s\S]*>/i.test(raw)) {
-    return raw;
+  // Clean any legacy <mark> tags where trailing spaces were trapped inside
+  let cleaned = raw.replace(/(<mark\b[^>]*>)([\s\S]*?)(\s+)(<\/mark>)/gi, '$1$2$4$3');
+
+  // If already rich HTML (contains tags), return cleaned
+  if (/<[a-z][\s\S]*>/i.test(cleaned)) {
+    return cleaned;
   }
 
   // Convert legacy ==color:text== to styled <mark> elements
-  let converted = raw.replace(/==([a-zA-Z]+:)?([\s\S]+?)==/g, (_, col, text) => {
+  let converted = cleaned.replace(/==([a-zA-Z]+:)?([\s\S]+?)==/g, (_, col, text) => {
     const key = (col ? col.replace(':', '') : 'yellow').toLowerCase();
     const target = MAC_HIGHLIGHT_COLORS.find((c) => c.id === key || (key === 'amber' && c.id === 'yellow') || (key === 'rose' && c.id === 'pink') || (key === 'emerald' && c.id === 'green')) || MAC_HIGHLIGHT_COLORS[0];
+    const match = text.match(/^(.*?)(\s+)$/s);
+    if (match) {
+      return `<mark class="mac-highlight" style="background-color: ${target.bg}; color: ${target.text}; padding: 2px 6px; border-radius: 4px; box-shadow: ${target.glow}; border: 1px solid ${target.border}; font-weight: 500;">${match[1]}</mark>${match[2]}`;
+    }
     return `<mark class="mac-highlight" style="background-color: ${target.bg}; color: ${target.text}; padding: 2px 6px; border-radius: 4px; box-shadow: ${target.glow}; border: 1px solid ${target.border}; font-weight: 500;">${text}</mark>`;
   });
 
@@ -142,6 +212,12 @@ export default function MacNotesEditor({
 
   const handleInput = () => {
     if (!editorRef.current) return;
+    // Clean up any empty mark elements left after backspacing
+    editorRef.current.querySelectorAll('mark.mac-highlight').forEach((m) => {
+      if (!m.textContent) {
+        m.remove();
+      }
+    });
     const html = editorRef.current.innerHTML;
     lastHtmlRef.current = html;
     updateStats();
@@ -206,10 +282,35 @@ export default function MacNotesEditor({
     mark.style.fontWeight = '500';
 
     try {
-      const fragment = range.extractContents();
+      const { fragment, trailingSpace } = extractAndTrimFragment(range);
       mark.appendChild(fragment);
       range.insertNode(mark);
-      selection.removeAllRanges();
+
+      // Keep any trailing whitespace or ensure an unstyled text node exists immediately outside the mark
+      let nextNode = mark.nextSibling;
+      let targetOffset = 0;
+
+      if (trailingSpace) {
+        const spaceNode = document.createTextNode(trailingSpace);
+        mark.parentNode?.insertBefore(spaceNode, nextNode);
+        nextNode = spaceNode;
+        targetOffset = trailingSpace.length;
+      } else if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+        const emptyNode = document.createTextNode('');
+        mark.parentNode?.insertBefore(emptyNode, nextNode);
+        nextNode = emptyNode;
+        targetOffset = 0;
+      }
+
+      // Position caret immediately AFTER the highlight in the outside text node, so next words are unhighlighted
+      const newRange = document.createRange();
+      if (nextNode) {
+        newRange.setStart(nextNode, targetOffset);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+      editorRef.current?.focus();
       handleInput();
     } catch (err) {
       document.execCommand('hiliteColor', false, colorConfig.bg);
@@ -239,15 +340,151 @@ export default function MacNotesEditor({
 
     const code = document.createElement('code');
     try {
-      const fragment = range.extractContents();
+      const { fragment, trailingSpace } = extractAndTrimFragment(range);
       code.appendChild(fragment);
       range.insertNode(code);
-      selection.removeAllRanges();
+
+      let nextNode = code.nextSibling;
+      let targetOffset = 0;
+
+      if (trailingSpace) {
+        const spaceNode = document.createTextNode(trailingSpace);
+        code.parentNode?.insertBefore(spaceNode, nextNode);
+        nextNode = spaceNode;
+        targetOffset = trailingSpace.length;
+      } else if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+        const emptyNode = document.createTextNode('');
+        code.parentNode?.insertBefore(emptyNode, nextNode);
+        nextNode = emptyNode;
+        targetOffset = 0;
+      }
+
+      const newRange = document.createRange();
+      if (nextNode) {
+        newRange.setStart(nextNode, targetOffset);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+      editorRef.current?.focus();
       handleInput();
     } catch (err) {
       document.execCommand('insertHTML', false, `<code>${selection.toString()}</code>`);
       handleInput();
     }
+  };
+
+  const handleKeyDown = (e) => {
+    if (readOnly) return;
+    const selection = window.getSelection();
+    const el = getInlineFormattedAtCaretEnd(selection);
+
+    if (el) {
+      // 1. Space: User wants to separate the highlighted word from the next word
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        let next = el.nextSibling;
+        if (next && next.nodeType === Node.TEXT_NODE) {
+          next.insertData(0, ' ');
+          const newRange = document.createRange();
+          newRange.setStart(next, 1);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else {
+          const spaceNode = document.createTextNode(' ');
+          el.parentNode?.insertBefore(spaceNode, next);
+          const newRange = document.createRange();
+          newRange.setStart(spaceNode, 1);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+        handleInput();
+        return;
+      }
+
+      // 2. ArrowRight: Navigate past the highlight cleanly
+      if (e.key === 'ArrowRight') {
+        let next = el.nextSibling;
+        if (next && next.nodeType === Node.TEXT_NODE) {
+          e.preventDefault();
+          const newRange = document.createRange();
+          newRange.setStart(next, 0);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+          return;
+        } else if (!next) {
+          e.preventDefault();
+          const emptyNode = document.createTextNode('');
+          el.parentNode?.appendChild(emptyNode);
+          const newRange = document.createRange();
+          newRange.setStart(emptyNode, 0);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+          return;
+        }
+      }
+
+      // 3. Enter: Ensure new line doesn't start inside the highlight tag
+      if (e.key === 'Enter') {
+        let next = el.nextSibling;
+        if (!next || next.nodeType !== Node.TEXT_NODE) {
+          const emptyNode = document.createTextNode('');
+          el.parentNode?.insertBefore(emptyNode, next);
+          next = emptyNode;
+        }
+        const newRange = document.createRange();
+        newRange.setStart(next, 0);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+    }
+  };
+
+  const handleBeforeInput = (e) => {
+    if (readOnly) return;
+    if (e.inputType === 'insertText') {
+      const selection = window.getSelection();
+      const el = getInlineFormattedAtCaretEnd(selection);
+      if (el) {
+        // Typing at the end boundary of highlight/code: snap caret outside so typed characters are normal text
+        let next = el.nextSibling;
+        if (!next || next.nodeType !== Node.TEXT_NODE) {
+          next = document.createTextNode('');
+          el.parentNode?.insertBefore(next, el.nextSibling);
+        }
+        const newRange = document.createRange();
+        newRange.setStart(next, 0);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (readOnly) return;
+    setTimeout(() => {
+      const selection = window.getSelection();
+      const el = getInlineFormattedAtCaretEnd(selection);
+      if (el) {
+        // If clicking right after the highlighted word (on its end padding), snap cursor outside el
+        let next = el.nextSibling;
+        if (!next || next.nodeType !== Node.TEXT_NODE) {
+          next = document.createTextNode('');
+          el.parentNode?.insertBefore(next, el.nextSibling);
+        }
+        const newRange = document.createRange();
+        newRange.setStart(next, 0);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+    }, 0);
   };
 
   const readTimeMin = Math.max(1, Math.ceil(stats.words / 200));
@@ -430,6 +667,9 @@ export default function MacNotesEditor({
           ref={editorRef}
           contentEditable={!readOnly}
           onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onBeforeInput={handleBeforeInput}
+          onMouseUp={handleMouseUp}
           data-placeholder={placeholder}
           className={`min-h-[340px] focus:outline-none text-sm text-slate-100 leading-relaxed font-sans space-y-3 mac-notes-content ${
             readOnly ? 'cursor-default' : 'cursor-text'
