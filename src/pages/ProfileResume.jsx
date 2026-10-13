@@ -13,7 +13,6 @@ import AnimatedCounter from '../components/motion/AnimatedCounter';
 import { Award, Share2, Check, Zap, ShieldCheck, Cloud, Terminal, CheckCircle2, ArrowRight, ExternalLink, Sparkles, Edit3, X, UserCheck, Cpu, RefreshCw, Globe } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import { isReducedMotionPreferred, SPRING_SMOOTH } from '../animations/motionConfig';
-import { fetchLeetCodeStats } from '../lib/leetcodeApi';
 
 export default function ProfileResume() {
   const { currentUser } = useAuth();
@@ -24,7 +23,6 @@ export default function ProfileResume() {
     levelInfo, 
     calculateStreak, 
     recalculateAndRepairStreak,
-    importLeetCodeProfile,
     unlockedAchievements, 
     roadmapProgress, 
     userProfile, 
@@ -40,7 +38,6 @@ export default function ProfileResume() {
   const [editGithub, setEditGithub] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [syncingStreak, setSyncingStreak] = useState(false);
-  const [syncingLeetCode, setSyncingLeetCode] = useState(false);
 
   const prefersReduced = isReducedMotionPreferred();
   const navigate = useNavigate();
@@ -65,23 +62,6 @@ export default function ProfileResume() {
     setIsEditModalOpen(true);
   };
 
-  const handleSyncLeetCode = async () => {
-    const username = userProfile?.leetcodeUsername || editLeetCode;
-    if (!username) return;
-    setSyncingLeetCode(true);
-    try {
-      const stats = await fetchLeetCodeStats(username);
-      const earnedXp = Math.max(50, (stats.easySolved * 15) + (stats.mediumSolved * 30) + (stats.hardSolved * 60));
-      if (importLeetCodeProfile) {
-        await importLeetCodeProfile(stats, earnedXp);
-      }
-    } catch (err) {
-      console.error('Failed to sync LeetCode:', err);
-    } finally {
-      setSyncingLeetCode(false);
-    }
-  };
-
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setSavingProfile(true);
@@ -93,19 +73,6 @@ export default function ProfileResume() {
       leetcodeUsername: editLeetCode,
       githubUsername: editGithub,
     });
-
-    // If LeetCode username is provided or updated, attempt to sync stats, submissions & streak
-    if (editLeetCode && editLeetCode.trim()) {
-      try {
-        const stats = await fetchLeetCodeStats(editLeetCode.trim());
-        const earnedXp = Math.max(50, (stats.easySolved * 15) + (stats.mediumSolved * 30) + (stats.hardSolved * 60));
-        if (importLeetCodeProfile) {
-          await importLeetCodeProfile(stats, earnedXp);
-        }
-      } catch (err) {
-        console.warn('Non-blocking: could not auto-fetch LeetCode stats during profile save:', err.message);
-      }
-    }
 
     setSavingProfile(false);
     setIsEditModalOpen(false);
@@ -232,18 +199,10 @@ export default function ProfileResume() {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold text-amber-300">@{userProfile.leetcodeUsername}</span>
-                    <button
-                      type="button"
-                      onClick={handleSyncLeetCode}
-                      disabled={syncingLeetCode}
-                      className="p-1 rounded-md hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                      title="Sync LeetCode stats & streak"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${syncingLeetCode ? 'animate-spin' : ''}`} />
-                    </button>
+                    <span className="px-1.5 py-0.2 rounded text-[8px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 uppercase">Sync Coming Soon</span>
                   </div>
                   <span className="text-[9px] text-slate-400 font-medium">
-                    {userProfile.leetcodeStats?.totalSolved !== undefined ? `${userProfile.leetcodeStats.totalSolved} Solved` : 'LeetCode Connected'}
+                    {userProfile.leetcodeStats?.totalSolved !== undefined ? `${userProfile.leetcodeStats.totalSolved} Solved` : 'LeetCode Handle'}
                   </span>
                 </div>
               </div>

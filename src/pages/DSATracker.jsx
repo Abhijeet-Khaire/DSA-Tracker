@@ -95,9 +95,11 @@ export default function DSATracker() {
               <h3 className="text-sm font-extrabold text-slate-200 uppercase tracking-wider">Queue Analytics</h3>
               <MotionButton
                 onClick={() => setIsImportOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-400 text-xs font-extrabold flex items-center gap-2 shadow-md"
+                className="px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-cyan-400 text-xs font-extrabold flex items-center gap-2 shadow-md cursor-pointer transition-all hover:border-cyan-500/40"
               >
-                <Download className="w-4 h-4" /> Import LeetCode Profile
+                <Download className="w-4 h-4 text-cyan-400" />
+                <span>Import LeetCode</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Coming Soon</span>
               </MotionButton>
             </div>
 
